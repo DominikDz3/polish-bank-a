@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: bank_a_db
+    environment:
+      POSTGRES_USER: bank_admin
+      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_DB: bank_a
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bank_network
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bank_a_backend
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bank_a
+      SPRING_DATASOURCE_USERNAME: bank_admin
+      SPRING_DATASOURCE_PASSWORD: secretpassword
+    depends_on:
+      - postgres
+    networks:
+      - bank_network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: bank_a_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - bank_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  bank_network:
+    driver: bridge

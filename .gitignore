@@ -1,0 +1,20 @@
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.iml
+*.iws
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker logs and temp files
+.docker/
+*.log
+
+# Folders to ignore in root
+**/node_modules/
+**/build/
+**/dist/
+**/target/
