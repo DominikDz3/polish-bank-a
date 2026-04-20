@@ -39,7 +39,10 @@ services:
       dockerfile: Dockerfile
     container_name: bank_a_frontend
     ports:
-      - "3000:80"
+      - "5137:5137"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       - backend
     networks:
