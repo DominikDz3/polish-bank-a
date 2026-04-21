@@ -7,7 +7,7 @@ RUN gradle build --no-daemon > /dev/null 2>&1 || true
 
 COPY src ./src
 
-RUN gradle bootJar --no-daemon
+RUN gradle clean bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
