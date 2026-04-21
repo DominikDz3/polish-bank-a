@@ -1,7 +1,10 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Smartphone, TrendingUp } from 'lucide-react';
 
 const Home: React.FC = () => {
+  const navigate = useNavigate();
+
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 text-zinc-100">
       <nav className="bg-zinc-900/80 backdrop-blur-sm border-b border-zinc-800 sticky top-0 z-50">
@@ -10,10 +13,14 @@ const Home: React.FC = () => {
             Polski <span className="text-blue-400">Bank A</span>
           </div>
           <div className="flex items-center gap-3">
-            <button className="text-zinc-400 hover:text-white px-4 py-2 rounded-lg font-medium transition-colors duration-150">
+            <button 
+            onClick={() => navigate('/login')}
+            className="text-zinc-400 hover:text-white px-4 py-2 rounded-lg font-medium transition-colors duration-150">
               Zaloguj się
             </button>
-            <button className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-medium transition-colors duration-150">
+            <button 
+            onClick={() => navigate('/register')}
+            className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-medium transition-colors duration-150">
               Załóż konto
             </button>
           </div>
