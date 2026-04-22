@@ -5,10 +5,11 @@ CREATE TABLE users (
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(20),
     role VARCHAR(50) NOT NULL
 );
 
--- tabela kont (z relacją do users oraz z relacją do samej siebie dla kont Junior)
+-- tabela kont (relacja do samej siebie dla kont Junior)
 CREATE TABLE accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -26,11 +27,17 @@ CREATE TABLE transactions (
     sender_account_number VARCHAR(34),
     receiver_account_id UUID REFERENCES accounts(id) ON DELETE SET NULL,
     receiver_account_number VARCHAR(34),
+    receiver_bank_bic VARCHAR(11),
+    receiver_name VARCHAR(255),
+    title VARCHAR(255),
     amount DECIMAL(15, 2) NOT NULL,
     currency VARCHAR(3) NOT NULL,
     status VARCHAR(50) NOT NULL,
     type VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    execution_date TIMESTAMP,
+    aml_client_explanation TEXT,
+    aml_bank_decision_note TEXT
 );
 
 -- tabela kart
