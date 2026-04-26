@@ -1,0 +1,108 @@
+flowchart LR
+    %% ==========================================
+    %% AKTORZY 
+    %% ==========================================
+    Junior["Junior"]
+    Rodzic["Rodzic"]
+    Klient["Klient indywidualny"]
+    
+    Junior ~~~ Rodzic
+    Rodzic ~~~ Klient
+
+    %% Dziedziczenie 
+    Rodzic -.->|dziedziczy| Klient
+
+    Pracownik["Pracownik banku"]
+    SystemAML["System AML (Zewn.)"]
+
+    %% ==========================================
+    %% SYSTEM BANKOWY 
+    %% ==========================================
+    subgraph Bank["Bank Polski A - System Bankowy"]
+        
+        subgraph Modul_Konta_i_Kart ["Moduł Kont, Kart i Dostępu"]
+            direction TB
+            UC_Zalozenie(["Założenie konta"])
+            UC_Logowanie(["Logowanie do bankowości"])
+            UC_LogowanieInne(["Logowanie przez inny bank (Open Banking)"])
+            UC_Blik(["Obsługa BLIK (Generowanie i płatność)"])
+            UC_PlatnoscKarta(["Płatność kartą (Debet/Kredyt)"])
+            UC_Blokada(["Blokada karty płatniczej"])
+            UC_Limit(["Zmiana limitów transakcyjnych"])
+        end
+        
+        subgraph Modul_Przelewow ["Moduł Przelewów i Bezpieczeństwa"]
+            direction TB
+            UC_PrzelewWewn(["Zlecenie przelewu wewnętrznego"])
+            UC_PrzelewSwift(["Zlecenie przelewu SWIFT"])
+            UC_PrzelewNatychmiast(["Zlecenie przelewu Express Elixir"])
+            UC_PrzelewZwykly(["Zlecenie przelewu ELIXIR"])
+            UC_Przelew(["Zlecenie przelewu (Baza)"])
+            
+            UC_WeryfikacjaAML(["Weryfikacja transakcji przez algorytmy"])
+            UC_Wyjasnienia(["Złożenie wyjaśnień do wstrzymanego przelewu"])
+        end
+        
+        subgraph Modul_Juniora ["Strefa Junior"]
+            direction TB
+            UC_KontoJunior(["Otwarcie subkonta Juniora"])
+            UC_LimitJunior(["Ustalanie limitów dla Juniora"])
+            UC_InicjacjaJunior(["Zainicjowanie transakcji (Junior)"])
+            UC_PrepaidJunior(["Płatność kartą Prepaid (Junior)"])
+            UC_ZatwierdzenieJunior(["Zatwierdzenie / Odrzucenie transakcji"])
+        end
+        
+        subgraph Modul_Pracownika ["Moduł Backoffice (Pracowniczy)"]
+            direction TB
+            UC_Monitorowanie(["Monitorowanie stanów rachunków"])
+            UC_DecyzjaAML(["Decyzja o uwolnieniu/blokadzie środków AML"])
+            UC_Raporty(["Przeglądanie raportów rozliczeniowych"])
+            UC_Alerty(["Zarządzanie alertami płynnościowymi"])
+        end
+        
+    end
+
+    %% ==========================================
+    %% RELACJE AKTORÓW
+    %% ==========================================
+    
+    %% Relacje: Klient
+    Klient --- UC_Zalozenie
+    Klient --- UC_Logowanie
+    Klient --- UC_LogowanieInne
+    Klient --- UC_Blik
+    Klient --- UC_PlatnoscKarta
+    Klient --- UC_Limit
+    Klient --- UC_Blokada
+    Klient --- UC_Przelew
+    Klient --- UC_Wyjasnienia
+
+    %% Relacje: Rodzic (dodatkowe)
+    Rodzic --- UC_KontoJunior
+    Rodzic --- UC_LimitJunior
+    Rodzic --- UC_ZatwierdzenieJunior
+
+    %% Relacje: Junior
+    Junior --- UC_Logowanie
+    Junior --- UC_Blik
+    Junior --- UC_InicjacjaJunior
+    Junior --- UC_PrepaidJunior
+
+    %% Relacje: Pracownik i System
+    UC_WeryfikacjaAML --- SystemAML
+    UC_Monitorowanie --- Pracownik
+    UC_DecyzjaAML --- Pracownik
+    UC_Raporty --- Pracownik
+    UC_Alerty --- Pracownik
+
+    %% ==========================================
+    %% ZALEŻNOŚCI LOGICZNE 
+    %% ==========================================
+    
+    UC_PrzelewWewn --> UC_Przelew
+    UC_PrzelewSwift --> UC_Przelew
+    UC_PrzelewNatychmiast --> UC_Przelew
+    UC_PrzelewZwykly --> UC_Przelew
+    
+    UC_Przelew -.->|"<<include>>"| UC_WeryfikacjaAML
+    UC_ZatwierdzenieJunior -.->|"<<extend>>"| UC_InicjacjaJunior
