@@ -22,6 +22,8 @@ public class Account {
 
     private String accountNumber;
     private BigDecimal balance;
+    private BigDecimal blockedFunds;
+
     private String currency;
     private String type;
 

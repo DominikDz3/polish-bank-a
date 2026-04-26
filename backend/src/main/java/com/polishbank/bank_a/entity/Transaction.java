@@ -37,11 +37,11 @@ public class Transaction {
     private String currency;
     private String status;
     private String type;
+    
+    private String externalPaymentId;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
     private LocalDateTime executionDate;
-    private String amlClientExplanation;
-    private String amlBankDecisionNote;
 }

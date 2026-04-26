@@ -2,31 +2,31 @@ package com.polishbank.bank_a.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "cards")
+@Table(name = "klik_aliases")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Card {
+public class KlikAlias {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @ManyToOne
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @ManyToOne
     @JoinColumn(name = "account_id", nullable = false)
     private Account account;
 
-    private String cardNumber;
-    private BigDecimal transactionLimit;
-    
-    private String currency;
-    private LocalDate expiryDate;
-    
-    private String type;
-    private boolean isBlocked;
+    private String alias;
+    private boolean active;
+
+    @Column(name = "created_at", insertable = false, updatable = false)
+    private LocalDateTime createdAt;
 }
