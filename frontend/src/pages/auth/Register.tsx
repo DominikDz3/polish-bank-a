@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Eye, EyeOff, UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+
 
 interface FormState {
   firstName: string;
@@ -18,6 +20,7 @@ const passwordRules = [
 
 const Register: React.FC = () => {
   const navigate = useNavigate();
+  const { register } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -50,12 +53,10 @@ const Register: React.FC = () => {
       return;
     }
     setIsLoading(true);
+
     try {
-
-      // TODO: podpiąć pod API backendu
-
-      await new Promise(r => setTimeout(r, 1000)); // placeholder
-      navigate('/login');
+      await register(form.firstName, form.lastName, form.email, form.password);
+      navigate('/dashboard');
     } catch {
       setError('Wystąpił błąd. Spróbuj ponownie.');
     } finally {
