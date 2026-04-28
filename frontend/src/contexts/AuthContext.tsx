@@ -1,13 +1,13 @@
-import { createContext, useContext, useState, useEffect} from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { authService } from '../services/authService';
 
-interface AuthUser { email: string; role: string }
+interface AuthUser { email: string; role: string; customerNumber: string }
 
 interface AuthContextType {
   user: AuthUser | null;
-  login: (email: string, password: string) => Promise<void>;
-  register: (firstName: string, lastName: string, email: string, password: string) => Promise<void>;
+  login: (customerNumber: string, password: string) => Promise<void>;
+  register: (firstName: string, lastName: string, email: string, password: string) => Promise<string>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -22,21 +22,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
-        setUser({ email: payload.sub, role: payload.role });
+        setUser({ email: payload.sub, role: payload.role, customerNumber: payload.customerNumber ?? '' });
       } catch {
         localStorage.removeItem('token');
       }
     }
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const res = await authService.login(email, password);
-    setUser({ email: res.email, role: res.role });
+  const login = async (customerNumber: string, password: string) => {
+    const res = await authService.login(customerNumber, password);
+    setUser({ email: res.email, role: res.role, customerNumber: res.customerNumber });
   };
 
-  const register = async (firstName: string, lastName: string, email: string, password: string) => {
+  const register = async (firstName: string, lastName: string, email: string, password: string): Promise<string> => {
     const res = await authService.register(firstName, lastName, email, password);
-    setUser({ email: res.email, role: res.role });
+    setUser({ email: res.email, role: res.role, customerNumber: res.customerNumber });
+    return res.customerNumber;
   };
 
   const logout = () => {

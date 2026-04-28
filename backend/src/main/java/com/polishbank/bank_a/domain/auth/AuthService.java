@@ -26,7 +26,7 @@ public class AuthService {
 
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.email())) {
-            throw new IllegalArgumentException("Email already in use");
+            throw new IllegalArgumentException("Email już jest w użyciu");
         }
         User user = User.builder()
                 .customerNumber(generateCustomerNumber())
@@ -38,16 +38,17 @@ public class AuthService {
                 .build();
         userRepository.save(user);
         String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
-        return new AuthResponse(token, user.getEmail(), user.getRole().name());
+        return new AuthResponse(token, user.getEmail(), user.getRole().name(), user.getCustomerNumber());
     }
 
     public AuthResponse login(LoginRequest request) {
+        User user = userRepository.findByCustomerNumber(request.customerNumber())
+                .orElseThrow(() -> new IllegalArgumentException("Nieprawidłowy numer klienta lub hasło"));
         authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.email(), request.password())
+                new UsernamePasswordAuthenticationToken(user.getEmail(), request.password())
         );
-        User user = userRepository.findByEmail(request.email()).orElseThrow();
         String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
-        return new AuthResponse(token, user.getEmail(), user.getRole().name());
+        return new AuthResponse(token, user.getEmail(), user.getRole().name(), user.getCustomerNumber());
     }
 
     private String generateCustomerNumber() {

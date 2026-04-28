@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [customerNumber, setCustomerNumber] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,10 +15,10 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
+      await login(customerNumber, password);
       navigate('/dashboard');
     } catch {
-      setError('Nieprawidłowy email lub hasło.');
+      setError('Nieprawidłowy numer klienta lub hasło.');
     } finally {
       setLoading(false);
     }
@@ -31,13 +31,15 @@ export default function Login() {
         {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">Email</label>
+            <label className="block text-sm text-zinc-400 mb-1">Numer klienta</label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              value={customerNumber}
+              onChange={(e) => setCustomerNumber(e.target.value)}
+              maxLength={8}
+              placeholder="12345678"
               required
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500"
             />
           </div>
           <div>
