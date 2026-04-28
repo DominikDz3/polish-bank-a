@@ -2,6 +2,7 @@ package com.polishbank.bank_a.seeder;
 
 import com.polishbank.bank_a.domain.user.User;
 import com.polishbank.bank_a.domain.user.UserRepository;
+import com.polishbank.bank_a.domain.user.UserRole;
 import com.polishbank.bank_a.entity.*;
 import com.polishbank.bank_a.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -44,31 +45,31 @@ public class DataSeeder implements CommandLineRunner {
         // 1. UŻYTKOWNICY
         User admin = userRepository.save(User.builder().customerNumber("99000001").firstName("Jan").lastName("Kowalski")
                 .email("admin@banka.pl").phoneNumber("48111222333").dateOfBirth(LocalDate.of(1980, 1, 1))
-                .passwordHash(defaultPassword).role("BANK_EMPLOYEE").build());
+                .passwordHash(defaultPassword).role(UserRole.ADMIN).build());
         User parentEwa = userRepository.save(User.builder().customerNumber("84920183").firstName("Ewa")
                 .lastName("Majewska").email("ewa.majewska@gmail.com").phoneNumber("48600100200")
-                .dateOfBirth(LocalDate.of(1985, 5, 15)).passwordHash(defaultPassword).role("CUSTOMER").build());
+                .dateOfBirth(LocalDate.of(1985, 5, 15)).passwordHash(defaultPassword).role(UserRole.CUSTOMER).build());
         User juniorJanek = userRepository.save(User.builder().customerNumber("12847593").firstName("Jan")
                 .lastName("Majewski").email("janek.m@gmail.com").phoneNumber("48600100201")
-                .dateOfBirth(LocalDate.of(2015, 8, 20)).passwordHash(defaultPassword).role("CUSTOMER").build());
+                .dateOfBirth(LocalDate.of(2015, 8, 20)).passwordHash(defaultPassword).role(UserRole.CUSTOMER).build());
         User juniorZuzia = userRepository.save(User.builder().customerNumber("58392011").firstName("Zuzanna")
                 .lastName("Majewska").email("zuzia.m@gmail.com").phoneNumber("48600100202")
-                .dateOfBirth(LocalDate.of(2013, 11, 10)).passwordHash(defaultPassword).role("CUSTOMER").build());
+                .dateOfBirth(LocalDate.of(2013, 11, 10)).passwordHash(defaultPassword).role(UserRole.CUSTOMER).build());
         User parentAnna = userRepository.save(User.builder().customerNumber("67291028").firstName("Anna")
                 .lastName("Nowak").email("anna.nowak@gmail.com").phoneNumber("48700300400")
-                .dateOfBirth(LocalDate.of(1990, 7, 22)).passwordHash(defaultPassword).role("CUSTOMER").build());
+                .dateOfBirth(LocalDate.of(1990, 7, 22)).passwordHash(defaultPassword).role(UserRole.CUSTOMER).build());
         User juniorPiotr = userRepository.save(User.builder().customerNumber("48192038").firstName("Piotr")
                 .lastName("Nowak").email("piotrek.junior@gmail.com").phoneNumber("48700300401")
-                .dateOfBirth(LocalDate.of(2014, 4, 12)).passwordHash(defaultPassword).role("CUSTOMER").build());
+                .dateOfBirth(LocalDate.of(2014, 4, 12)).passwordHash(defaultPassword).role(UserRole.CUSTOMER).build());
         User michal = userRepository.save(User.builder().customerNumber("51829304").firstName("Michał")
                 .lastName("Wiśniewski").email("michal.w@firma.pl").phoneNumber("48500600700")
-                .dateOfBirth(LocalDate.of(1992, 9, 9)).passwordHash(defaultPassword).role("CUSTOMER").build());
+                .dateOfBirth(LocalDate.of(1992, 9, 9)).passwordHash(defaultPassword).role(UserRole.CUSTOMER).build());
         User katarzyna = userRepository.save(User.builder().customerNumber("39481726").firstName("Katarzyna")
                 .lastName("Zielińska").email("kasia.z@korpo.com").phoneNumber("48800900100")
-                .dateOfBirth(LocalDate.of(1988, 12, 1)).passwordHash(defaultPassword).role("CUSTOMER").build());
+                .dateOfBirth(LocalDate.of(1988, 12, 1)).passwordHash(defaultPassword).role(UserRole.CUSTOMER).build());
         User podejrzany = userRepository.save(User.builder().customerNumber("11847265").firstName("Olaf")
                 .lastName("Kombinator").email("olaf.k@darknet.pl").phoneNumber("48999000999")
-                .dateOfBirth(LocalDate.of(1975, 3, 15)).passwordHash(defaultPassword).role("CUSTOMER").build());
+                .dateOfBirth(LocalDate.of(1975, 3, 15)).passwordHash(defaultPassword).role(UserRole.CUSTOMER).build());
 
                 
         // 2. KONTA BANKOWE (Identyfikator banku: 88880000)
