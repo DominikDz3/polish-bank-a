@@ -1,5 +1,7 @@
 package com.polishbank.bank_a.seeder;
 
+import com.polishbank.bank_a.domain.user.User;
+import com.polishbank.bank_a.domain.user.UserRepository;
 import com.polishbank.bank_a.entity.*;
 import com.polishbank.bank_a.repository.*;
 import lombok.RequiredArgsConstructor;
