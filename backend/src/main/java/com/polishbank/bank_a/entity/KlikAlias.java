@@ -1,5 +1,6 @@
 package com.polishbank.bank_a.entity;
 
+import com.polishbank.bank_a.domain.user.User;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;

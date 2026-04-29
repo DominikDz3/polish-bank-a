@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { use, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Eye, EyeOff, UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+
 
 interface FormState {
   firstName: string;
@@ -18,10 +20,13 @@ const passwordRules = [
 
 const Register: React.FC = () => {
   const navigate = useNavigate();
+  const { register } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [customerNumber, setCustomerNumber] = useState('');
+  const [success, setSuccess] = useState(false);
   const [form, setForm] = useState<FormState>({
     firstName: '',
     lastName: '',
@@ -50,18 +55,47 @@ const Register: React.FC = () => {
       return;
     }
     setIsLoading(true);
+
     try {
-
-      // TODO: podpiąć pod API backendu
-
-      await new Promise(r => setTimeout(r, 1000)); // placeholder
-      navigate('/login');
-    } catch {
-      setError('Wystąpił błąd. Spróbuj ponownie.');
-    } finally {
+      const number = await register(form.firstName, form.lastName, form.email, form.password);
+      setCustomerNumber(number);
+      setSuccess(true);
+      } catch {
+        setError('Wystąpił błąd. Spróbuj ponownie.');
+      } finally {
       setIsLoading(false);
     }
   };
+
+  if (success) {
+  return (
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center px-4">
+      <div className="w-full max-w-md text-center">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8">
+          <div className="w-12 h-12 bg-blue-500/10 border border-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-blue-400 text-xl">✓</span>
+          </div>
+          <h2 className="text-xl font-semibold text-white mb-2">Konto założone!</h2>
+          <p className="text-zinc-400 text-sm mb-6">Twój numer klienta do logowania:</p>
+          <div className="bg-zinc-800 border border-blue-500/30 rounded-xl px-6 py-4 mb-4">
+            <span className="text-3xl font-mono font-bold text-blue-400 tracking-widest">
+              {customerNumber}
+            </span>
+          </div>
+          <p className="text-zinc-500 text-xs mb-8">
+            Zapisz ten numer — będzie potrzebny przy każdym logowaniu.
+          </p>
+          <button
+            onClick={() => navigate('/login')}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-lg text-sm transition-colors"
+          >
+            Przejdź do logowania
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center px-4 py-12">
