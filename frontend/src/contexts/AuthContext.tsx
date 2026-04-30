@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     authService.logout();
     setUser(null);
-    window.location.href = '/';
+    window.location.href = '/login';
   };
 
   return (
