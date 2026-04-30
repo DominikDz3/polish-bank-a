@@ -26,6 +26,13 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-10">
+          <button onClick={() => navigate('/')} className="text-2xl font-bold tracking-tight text-white hover:opacity-80 transition-opacity">
+            <span className="text-blue-400">Bankly</span>
+          </button>
+          <p className="mt-2 text-zinc-500 text-sm">Zaloguj się na swoje konto</p>
+        </div>
       <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-8">
         <h1 className="text-2xl font-bold text-white mb-6">Zaloguj się</h1>
         {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
@@ -59,11 +66,12 @@ export default function Login() {
           >
             {loading ? 'Logowanie...' : 'Zaloguj się'}
           </button>
-        </form>
-        <p className="text-zinc-500 text-sm text-center mt-4">
-          Nie masz konta?{' '}
-          <Link to="/register" className="text-blue-400 hover:underline">Zarejestruj się</Link>
-        </p>
+          </form>
+          <p className="text-zinc-500 text-sm text-center mt-4">
+            Nie masz konta?{' '}
+            <Link to="/register" className="text-blue-400 hover:underline">Zarejestruj się</Link>
+          </p>
+        </div>
       </div>
     </div>
   );
