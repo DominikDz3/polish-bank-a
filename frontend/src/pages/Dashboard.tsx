@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
+import { useNavigate } from 'react-router-dom';
 
 interface AccountSummary {
   id: string;
@@ -15,6 +16,8 @@ type TabType = 'PERSONAL' | 'JUNIOR';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
+
+  const navigate = useNavigate();
   
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -250,8 +253,11 @@ export default function Dashboard() {
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 sticky top-24">
                 <h2 className="text-xl font-semibold text-zinc-200 mb-6">Nowy przelew</h2>
                 <div className="space-y-3">
-                  <button className="w-full bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex items-center justify-between hover:border-blue-500/50 hover:bg-zinc-900 transition-all group">
-                    <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => navigate('/transfer/internal')}
+                    className="w-full bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex items-center justify-between hover:border-blue-500/50 hover:bg-zinc-900 transition-all group"
+                    >
+                      <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-blue-400 group-hover:bg-blue-500/10 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                       </div>

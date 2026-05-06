@@ -6,6 +6,7 @@ import Register from './pages/auth/Register.tsx'
 import Dashboard from './pages/Dashboard.tsx'
 import { AuthProvider } from './contexts/AuthContext.tsx'
 import { ProtectedRoute } from './components/layout/ProtectedRoute.tsx'
+import InternalTransfer from './pages/auth/InternalTransfer';
 
 
 function App() {
@@ -20,6 +21,11 @@ function App() {
           <ProtectedRoute>
             <Dashboard/>
         </ProtectedRoute>
+        } />
+        <Route path={ROUTES.INTERNAL_TRANSFER} element={
+          <ProtectedRoute>
+            <InternalTransfer />
+          </ProtectedRoute>
         } />
       </Routes>
     </AuthProvider>
