@@ -6,7 +6,10 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 public interface AccountRepository extends JpaRepository<Account, UUID>{
     List<Account> findByUser_CustomerNumber(String customerNumber);
+
+    Optional<Account> findByAccountNumber(String accountNumber);
 }

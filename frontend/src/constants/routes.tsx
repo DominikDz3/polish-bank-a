@@ -3,4 +3,5 @@ export const ROUTES = {
     LOGIN: '/login',
     REGISTER: '/register',
     DASHBOARD: '/dashboard',
+    INTERNAL_TRANSFER: '/transfer/internal',
 };
