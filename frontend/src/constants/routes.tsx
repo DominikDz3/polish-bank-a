@@ -4,4 +4,5 @@ export const ROUTES = {
     REGISTER: '/register',
     DASHBOARD: '/dashboard',
     INTERNAL_TRANSFER: '/transfer/internal',
+    TRANSACTION_HISTORY: '/history/:accountId',
 };

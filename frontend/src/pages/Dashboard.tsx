@@ -96,7 +96,10 @@ export default function Dashboard() {
           </button>
         </div>
         <div className="flex gap-2">
-          <button className="flex-1 bg-zinc-800 text-zinc-300 py-1.5 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors">Historia</button>
+          <button 
+            className="flex-1 bg-zinc-800 text-zinc-300 py-1.5 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors" 
+            onClick={() => navigate(`/history/${account.id}`)}>Historia
+          </button>
           <button className="flex-1 bg-zinc-800 text-zinc-300 py-1.5 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors">Szczegóły</button>
         </div>
       </div>
@@ -226,7 +229,9 @@ export default function Dashboard() {
                         </h2>
                       </div>
                       <div className="mt-6 flex gap-2">
-                        <button className="flex-1 bg-zinc-800 text-zinc-300 py-2 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors">
+                        <button 
+                          className="flex-1 bg-zinc-800 text-zinc-300 py-2 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors"
+                          onClick={() => navigate(`/history/${account.id}`)}>
                           Historia dziecka
                         </button>
                         <button className="flex-1 bg-zinc-800 text-zinc-300 py-2 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors">

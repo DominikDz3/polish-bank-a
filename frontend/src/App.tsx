@@ -1,11 +1,12 @@
 import { Routes, Route} from 'react-router-dom'
 import { ROUTES } from './constants/routes.tsx'
+import { AuthProvider } from './contexts/AuthContext.tsx'
+import { ProtectedRoute } from './components/layout/ProtectedRoute.tsx'
 import Home from './pages/Home.tsx'
 import Login from './pages/auth/Login.tsx'
 import Register from './pages/auth/Register.tsx'
 import Dashboard from './pages/Dashboard.tsx'
-import { AuthProvider } from './contexts/AuthContext.tsx'
-import { ProtectedRoute } from './components/layout/ProtectedRoute.tsx'
+import TransactionHistory from './pages/TransactionHistory';
 import InternalTransfer from './pages/auth/InternalTransfer';
 
 
@@ -25,6 +26,12 @@ function App() {
         <Route path={ROUTES.INTERNAL_TRANSFER} element={
           <ProtectedRoute>
             <InternalTransfer />
+          </ProtectedRoute>
+        } />
+
+        <Route path={ROUTES.TRANSACTION_HISTORY} element={
+          <ProtectedRoute>
+            <TransactionHistory />
           </ProtectedRoute>
         } />
       </Routes>
