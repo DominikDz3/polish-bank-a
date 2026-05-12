@@ -5,8 +5,8 @@ services:
     image: postgres:15-alpine
     container_name: bank_a_db
     environment:
-      POSTGRES_USER: bank_admin
-      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: bank_a
     ports:
       - "5433:5432"
@@ -25,8 +25,12 @@ services:
       - "8080:8080"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bank_a
-      SPRING_DATASOURCE_USERNAME: bank_admin
-      SPRING_DATASOURCE_PASSWORD: secretpassword
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      KLIK_BASE_URL: ${KLIK_BASE_URL}
+      KLIK_API_KEY: ${KLIK_API_KEY}
+      KLIK_ZONE: ${KLIK_ZONE}
     depends_on:
       - postgres
     networks:
