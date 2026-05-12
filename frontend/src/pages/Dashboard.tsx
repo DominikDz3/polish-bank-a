@@ -190,7 +190,9 @@ export default function Dashboard() {
                       </div>
                       <span className="text-sm font-medium text-zinc-300">Moje karty</span>
                     </button>
-                    <button className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col items-center justify-center gap-3 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all group">
+                    <button 
+                      onClick={() => navigate('/klik/code')}
+                      className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col items-center justify-center gap-3 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all group">
                       <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-blue-400 group-hover:bg-blue-500/10 transition-colors font-bold text-sm">BLIK</div>
                       <span className="text-sm font-medium text-zinc-300">Kod BLIK</span>
                     </button>
