@@ -8,6 +8,7 @@ import Register from './pages/auth/Register.tsx'
 import Dashboard from './pages/Dashboard.tsx'
 import TransactionHistory from './pages/TransactionHistory';
 import InternalTransfer from './pages/auth/InternalTransfer';
+import KlikCodePage from './pages/KlikCodePage';
 
 
 function App() {
@@ -18,11 +19,13 @@ function App() {
         <Route path={ROUTES.HOME} element={<Home/>}/>
         <Route path={ROUTES.LOGIN} element={<Login/>}/>
         <Route path={ROUTES.REGISTER} element={<Register/>}/>
+        
         <Route path={ROUTES.DASHBOARD} element = {
           <ProtectedRoute>
             <Dashboard/>
         </ProtectedRoute>
         } />
+
         <Route path={ROUTES.INTERNAL_TRANSFER} element={
           <ProtectedRoute>
             <InternalTransfer />
@@ -32,6 +35,12 @@ function App() {
         <Route path={ROUTES.TRANSACTION_HISTORY} element={
           <ProtectedRoute>
             <TransactionHistory />
+          </ProtectedRoute>
+        } />
+
+        <Route path={ROUTES.KLIK_CODE} element={
+          <ProtectedRoute>
+            <KlikCodePage />
           </ProtectedRoute>
         } />
       </Routes>
