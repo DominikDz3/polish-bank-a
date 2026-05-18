@@ -31,6 +31,8 @@ services:
       KLIK_BASE_URL: ${KLIK_BASE_URL}
       KLIK_API_KEY: ${KLIK_API_KEY}
       KLIK_ZONE: ${KLIK_ZONE}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - postgres
     networks:
