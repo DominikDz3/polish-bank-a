@@ -17,16 +17,19 @@ public class PinLockoutTracker {
     private final UserRepository userRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void recordFailure(UUID userId, int maxAttempts, int lockoutMinutes) {
+    public LocalDateTime recordFailure(UUID userId, int maxAttempts, int lockoutMinutes) {
         User user = userRepository.findById(userId).orElseThrow();
         int attempts = user.getPinFailedAttempts() + 1;
         if (attempts >= maxAttempts) {
-            user.setPinLockedUntil(LocalDateTime.now().plusMinutes(lockoutMinutes));
+            LocalDateTime lockedUntil = LocalDateTime.now().plusMinutes(lockoutMinutes);
+            user.setPinLockedUntil(lockedUntil);
             user.setPinFailedAttempts(0);
-        } else {
-            user.setPinFailedAttempts(attempts);
+            userRepository.save(user);
+            return lockedUntil;
         }
+        user.setPinFailedAttempts(attempts);
         userRepository.save(user);
+        return null;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

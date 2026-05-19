@@ -2,6 +2,7 @@ package com.polishbank.bank_a.domain.auth;
 
 import com.polishbank.bank_a.domain.user.User;
 import com.polishbank.bank_a.domain.user.UserRepository;
+import com.polishbank.bank_a.exception.PinLockedException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -52,20 +53,16 @@ public class PinService {
 
         LocalDateTime now = LocalDateTime.now();
         if (user.getPinLockedUntil() != null && user.getPinLockedUntil().isAfter(now)) {
-            long minutesLeft = java.time.Duration.between(now, user.getPinLockedUntil()).toMinutes() + 1;
-            throw new IllegalStateException(
-                    "PIN został zablokowany po zbyt wielu nieudanych próbach. Spróbuj ponownie za "
-                            + minutesLeft + " min.");
+            throw new PinLockedException(user.getPinLockedUntil());
         }
 
         if (!passwordEncoder.matches(pin, user.getPinHash())) {
-            lockoutTracker.recordFailure(user.getId(), MAX_FAILED_ATTEMPTS, LOCKOUT_MINUTES);
-            int attemptsAfter = user.getPinFailedAttempts() + 1;
-            if (attemptsAfter >= MAX_FAILED_ATTEMPTS) {
-                throw new IllegalStateException(
-                        "Wprowadzono nieprawidłowy PIN " + MAX_FAILED_ATTEMPTS
-                                + " razy z rzędu. Konto zostało zablokowane na " + LOCKOUT_MINUTES + " minut.");
+            LocalDateTime lockedUntil = lockoutTracker.recordFailure(
+                    user.getId(), MAX_FAILED_ATTEMPTS, LOCKOUT_MINUTES);
+            if (lockedUntil != null) {
+                throw new PinLockedException(lockedUntil);
             }
+            int attemptsAfter = user.getPinFailedAttempts() + 1;
             int left = MAX_FAILED_ATTEMPTS - attemptsAfter;
             throw new IllegalArgumentException("Nieprawidłowy PIN. Pozostało prób: " + left + ".");
         }

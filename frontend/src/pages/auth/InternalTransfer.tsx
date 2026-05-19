@@ -30,6 +30,9 @@ export default function InternalTransfer() {
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
 
+  const [lockedUntil, setLockedUntil] = useState<Date | null>(null);
+  const [nowTs, setNowTs] = useState<number>(() => Date.now());
+
   const loadAccounts = async () => {
     try {
       const response = await api.get('/api/accounts');
@@ -47,6 +50,20 @@ export default function InternalTransfer() {
   useEffect(() => {
     loadAccounts();
   }, []);
+
+  useEffect(() => {
+  if (!lockedUntil) return;
+  setNowTs(Date.now());
+  const id = setInterval(() => setNowTs(Date.now()), 1000);
+  return () => clearInterval(id);
+}, [lockedUntil]);
+
+useEffect(() => {
+  if (lockedUntil && nowTs >= lockedUntil.getTime()) {
+    setLockedUntil(null);
+    setPinError(null);
+  }
+}, [nowTs, lockedUntil]);
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
@@ -81,41 +98,50 @@ export default function InternalTransfer() {
   };
 
   const confirmWithPin = async () => {
-    if (!/^\d{4}$/.test(pin)) {
-      setPinError("PIN musi składać się z dokładnie 4 cyfr.");
-      return;
-    }
-    setPinError(null);
-    setIsSubmitting(true);
-    const cleanReceiverNumber = receiverAccountNumber.replace(/\s+/g, '');
+  if (lockedUntil) return;
+  if (!/^\d{4}$/.test(pin)) {
+    setPinError("PIN musi składać się z dokładnie 4 cyfr.");
+    return;
+  }
+  setPinError(null);
+  setIsSubmitting(true);
+  const cleanReceiverNumber = receiverAccountNumber.replace(/\s+/g, '');
 
-    try {
-      await api.post('/api/transactions/internal', {
-        senderAccountId,
-        receiverAccountNumber: cleanReceiverNumber,
-        amount: parseFloat(amount),
-        title,
-        pin,
-      });
+  try {
+    await api.post('/api/transactions/internal', {
+      senderAccountId,
+      receiverAccountNumber: cleanReceiverNumber,
+      amount: parseFloat(amount),
+      title,
+      pin,
+    });
 
-      setSuccess(true);
-      setReceiverAccountNumber('');
-      setAmount('');
-      setTitle('');
-      setFieldErrors({});
-      setShowPinModal(false);
+    setSuccess(true);
+    setReceiverAccountNumber('');
+    setAmount('');
+    setTitle('');
+    setFieldErrors({});
+    setShowPinModal(false);
+    setPin('');
+  } catch (err: any) {
+    const status = err.response?.status;
+    const data = err.response?.data;
+    if (status === 423 && data?.lockedUntil) {
+      setLockedUntil(new Date(data.lockedUntil));
       setPin('');
-
-      await loadAccounts();
-    } catch (err: any) {
-      const msg = err.response?.data?.message
-        || err.response?.data?.errors?.[0]?.defaultMessage
+      setPinError(null);
+    } else {
+      const msg = data?.detail
+        || data?.message
+        || data?.errors?.[0]?.defaultMessage
         || "Wystąpił błąd podczas realizacji przelewu.";
       setPinError(msg);
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+  } finally {
+    setIsSubmitting(false);
+    await loadAccounts();
+  }
+};
 
   const formatCurrency = (value: number, currency: string) => {
     return new Intl.NumberFormat('pl-PL', { style: 'currency', currency }).format(value);
@@ -128,6 +154,13 @@ export default function InternalTransfer() {
       </div>
     );
   }
+
+  const formatCountdown = (ms: number) => {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+};
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col">
@@ -246,56 +279,91 @@ export default function InternalTransfer() {
       </main>
 
       {showPinModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
-          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-white text-center mb-1">Potwierdź PIN-em</h3>
-            <p className="text-zinc-500 text-sm text-center mb-5">
-              Wpisz 4-cyfrowy kod PIN, aby zatwierdzić przelew.
-            </p>
-
-            <input
-              type="password"
-              inputMode="numeric"
-              autoFocus
-              value={pin}
-              onChange={(e) => {
-                setPin(e.target.value.replace(/\D/g, '').slice(0, 4));
-                setPinError(null);
-              }}
-              placeholder="••••"
-              maxLength={4}
-              className="w-full bg-zinc-800 border border-zinc-700 text-white text-center tracking-[0.6em] text-2xl rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-            />
-
-            {pinError && (
-              <p className="text-red-400 text-xs mt-2 text-center">{pinError}</p>
-            )}
-
-            <div className="flex gap-3 mt-5">
-              <button
-                type="button"
-                onClick={() => { setShowPinModal(false); setPin(''); setPinError(null); }}
-                disabled={isSubmitting}
-                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
-              >
-                Anuluj
-              </button>
-              <button
-                type="button"
-                onClick={confirmWithPin}
-                disabled={isSubmitting || pin.length !== 4}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
-                ) : (
-                  'Potwierdź'
-                )}
-              </button>
-            </div>
+  <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+    <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl">
+      {lockedUntil ? (
+        <>
+          <div className="w-14 h-14 bg-red-500/10 border border-red-500/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
           </div>
-        </div>
+          <h3 className="text-lg font-semibold text-white text-center mb-1">PIN został zablokowany</h3>
+          <p className="text-zinc-400 text-sm text-center mb-5">
+            Wpisałeś nieprawidłowy PIN zbyt wiele razy. Z powodów bezpieczeństwa
+            potwierdzanie transakcji jest tymczasowo niedostępne.
+          </p>
+
+          <div className="bg-zinc-950 border border-red-500/30 rounded-xl px-4 py-5 mb-5 text-center">
+            <p className="text-xs uppercase tracking-wider text-zinc-500 mb-1">Pozostały czas blokady</p>
+            <p className="text-4xl font-mono font-bold text-red-400 tabular-nums">
+              {formatCountdown(lockedUntil.getTime() - nowTs)}
+            </p>
+            <p className="text-xs text-zinc-600 mt-2">
+              Odblokowanie: {lockedUntil.toLocaleTimeString('pl-PL')}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => { setShowPinModal(false); }}
+            className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2.5 rounded-lg text-sm transition-colors"
+          >
+            Zamknij
+          </button>
+        </>
+      ) : (
+        <>
+          <h3 className="text-lg font-semibold text-white text-center mb-1">Potwierdź PIN-em</h3>
+          <p className="text-zinc-500 text-sm text-center mb-5">
+            Wpisz 4-cyfrowy kod PIN, aby zatwierdzić przelew.
+          </p>
+
+          <input
+            type="password"
+            inputMode="numeric"
+            autoFocus
+            value={pin}
+            onChange={(e) => {
+              setPin(e.target.value.replace(/\D/g, '').slice(0, 4));
+              setPinError(null);
+            }}
+            placeholder="••••"
+            maxLength={4}
+            className="w-full bg-zinc-800 border border-zinc-700 text-white text-center tracking-[0.6em] text-2xl rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+          />
+
+          {pinError && (
+            <p className="text-red-400 text-xs mt-2 text-center">{pinError}</p>
+          )}
+
+          <div className="flex gap-3 mt-5">
+            <button
+              type="button"
+              onClick={() => { setShowPinModal(false); setPin(''); setPinError(null); }}
+              disabled={isSubmitting}
+              className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+            >
+              Anuluj
+            </button>
+            <button
+              type="button"
+              onClick={confirmWithPin}
+              disabled={isSubmitting || pin.length !== 4}
+              className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+            >
+              {isSubmitting ? (
+                <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+              ) : (
+                'Potwierdź'
+              )}
+            </button>
+          </div>
+        </>
       )}
+    </div>
+  </div>
+)}
     </div>
   );
 }
