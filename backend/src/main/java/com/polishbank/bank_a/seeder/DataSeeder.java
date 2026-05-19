@@ -1,20 +1,34 @@
 package com.polishbank.bank_a.seeder;
 
-import com.polishbank.bank_a.domain.user.User;
-import com.polishbank.bank_a.domain.user.UserRepository;
-import com.polishbank.bank_a.domain.user.UserRole;
-import com.polishbank.bank_a.entity.*;
-import com.polishbank.bank_a.repository.*;
-import lombok.RequiredArgsConstructor;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Component;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Component;
+
+import com.polishbank.bank_a.domain.user.User;
+import com.polishbank.bank_a.domain.user.UserRepository;
+import com.polishbank.bank_a.domain.user.UserRole;
+import com.polishbank.bank_a.entity.Account;
+import com.polishbank.bank_a.entity.AmlHold;
+import com.polishbank.bank_a.entity.Card;
+import com.polishbank.bank_a.entity.KlikAlias;
+import com.polishbank.bank_a.entity.KlikCode;
+import com.polishbank.bank_a.entity.PendingApproval;
+import com.polishbank.bank_a.entity.Transaction;
+import com.polishbank.bank_a.repository.AccountRepository;
+import com.polishbank.bank_a.repository.AmlHoldRepository;
+import com.polishbank.bank_a.repository.CardRepository;
+import com.polishbank.bank_a.repository.KlikAliasRepository;
+import com.polishbank.bank_a.repository.KlikCodeRepository;
+import com.polishbank.bank_a.repository.PendingApprovalRepository;
+import com.polishbank.bank_a.repository.TransactionRepository;
+
+import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
@@ -106,11 +120,11 @@ public class DataSeeder implements CommandLineRunner {
                         .transactionLimit(new BigDecimal("10000.00")).currency("PLN").expiryDate(cardExpiry)
                         .type("DEBIT").isBlocked(false).build(),
                 Card.builder().account(accJanek).cardNumber("4222192837465566")
-                        .transactionLimit(new BigDecimal("100.00")).currency("PLN").expiryDate(cardExpiry)
-                        .type("PREPAID").isBlocked(false).build(),
+                        .transactionLimit(new BigDecimal("100.00")).dailyLimit(new BigDecimal("300.00"))
+                        .currency("PLN").expiryDate(cardExpiry).type("PREPAID").isBlocked(false).build(),
                 Card.builder().account(accZuzia).cardNumber("4987654321098765")
-                        .transactionLimit(new BigDecimal("150.00")).currency("PLN").expiryDate(cardExpiry)
-                        .type("PREPAID").isBlocked(false).build(),
+                        .transactionLimit(new BigDecimal("150.00")).dailyLimit(new BigDecimal("500.00"))
+                        .currency("PLN").expiryDate(cardExpiry).type("PREPAID").isBlocked(false).build(),
                 Card.builder().account(accAnna).cardNumber("5312998877665544")
                         .transactionLimit(new BigDecimal("5000.00")).currency("PLN").expiryDate(cardExpiry)
                         .type("DEBIT").isBlocked(false).build(),
