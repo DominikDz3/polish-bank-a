@@ -3,6 +3,7 @@ package com.polishbank.bank_a.domain.user;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
@@ -38,4 +39,14 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private UserRole role;
+
+    @Column(name = "pin_hash", length = 255)
+    private String pinHash;
+
+    @Column(name = "pin_failed_attempts", nullable = false)
+    @Builder.Default
+    private int pinFailedAttempts = 0;
+
+    @Column(name = "pin_locked_until")
+    private LocalDateTime pinLockedUntil;
 }
