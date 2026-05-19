@@ -27,6 +27,10 @@ public class Transaction {
     @JoinColumn(name = "receiver_account_id")
     private Account receiverAccount;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "card_id")
+    private Card card;
+
     private String receiverAccountNumber;
 
     private String receiverBankBic;

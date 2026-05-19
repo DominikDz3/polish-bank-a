@@ -246,6 +246,7 @@ erDiagram
         date expiry_date
         varchar type
         boolean is_blocked
+        decimal daily_limit "Limit dzienny (NULL = brak)"
     }
 
     TRANSACTIONS {
@@ -264,6 +265,7 @@ erDiagram
         varchar external_payment_id
         timestamp created_at
         timestamp execution_date
+        UUID card_id FK "NULL jeśli nie płatność kartą"        
     }
 
     %% ==========================================
@@ -341,6 +343,8 @@ erDiagram
     %% Relacje AML
     ACCOUNTS ||--o{ AML_HOLDS : "ma zablokowane środki"
     TRANSACTIONS ||--o| AML_HOLDS : "jest zablokowana przez AML"
+
+    CARDS ||--o{ TRANSACTIONS : "obciąża"
 
 ```
 Schemat bazy danych (zaprojektowany dla PostgreSQL) stanowi fundament aplikacji. Architektura została w pełni znormalizowana i zoptymalizowana pod kątem bezpieczeństwa transakcyjnego oraz audytowalności operacji finansowych.
