@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -57,6 +57,12 @@ export default function TransactionHistory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user, logout } = useAuth();
+  const [params] = useSearchParams();
+  const handleBack = () => {
+    if (params.get('from') === 'junior') navigate('/dashboard?tab=junior');
+    else navigate(-1);
+  };
+
 
   useEffect(() => {
     api.get(`/api/transactions/history/${accountId}`)
@@ -71,7 +77,7 @@ export default function TransactionHistory() {
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
                 <button
-                    onClick={() => navigate('/dashboard')}
+                    onClick={handleBack}
                     className="text-zinc-400 hover:text-white transition-colors text-sm"
                 >
                 ← Wróć

@@ -6,4 +6,6 @@ export const ROUTES = {
     INTERNAL_TRANSFER: '/transfer/internal',
     TRANSACTION_HISTORY: '/history/:accountId',
     KLIK_CODE: '/klik/code',
+    ADD_JUNIOR: '/junior/add',
+    CARDS: '/cards',
 };
