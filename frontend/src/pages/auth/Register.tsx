@@ -84,12 +84,13 @@ const Register: React.FC = () => {
           </div>
           <p className="text-zinc-500 text-xs mb-8">
             Zapisz ten numer — będzie potrzebny przy każdym logowaniu.
+            Teraz ustawimy 4-cyfrowy kod PIN do potwierdzania transakcji.
           </p>
           <button
-            onClick={() => navigate('/login')}
+            onClick={() => navigate('/setup-pin')}
             className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-lg text-sm transition-colors"
           >
-            Przejdź do logowania
+            Ustaw kod PIN
           </button>
         </div>
       </div>

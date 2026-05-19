@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/layout/ProtectedRoute.tsx'
 import Home from './pages/Home.tsx'
 import Login from './pages/auth/Login.tsx'
 import Register from './pages/auth/Register.tsx'
+import SetupPin from './pages/auth/SetupPin.tsx'
 import Dashboard from './pages/Dashboard.tsx'
 import TransactionHistory from './pages/TransactionHistory';
 import InternalTransfer from './pages/auth/InternalTransfer';
@@ -19,7 +20,13 @@ function App() {
         <Route path={ROUTES.HOME} element={<Home/>}/>
         <Route path={ROUTES.LOGIN} element={<Login/>}/>
         <Route path={ROUTES.REGISTER} element={<Register/>}/>
-        
+
+        <Route path={ROUTES.SETUP_PIN} element={
+          <ProtectedRoute>
+            <SetupPin/>
+          </ProtectedRoute>
+        } />
+
         <Route path={ROUTES.DASHBOARD} element = {
           <ProtectedRoute>
             <Dashboard/>
