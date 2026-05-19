@@ -12,7 +12,7 @@ interface AccountSummary {
 
 export default function InternalTransfer() {
   const navigate = useNavigate();
-  
+
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [senderAccountId, setSenderAccountId] = useState('');
   const [receiverAccountNumber, setReceiverAccountNumber] = useState('');
@@ -26,6 +26,10 @@ export default function InternalTransfer() {
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+
   const loadAccounts = async () => {
     try {
       const response = await api.get('/api/accounts');
@@ -33,7 +37,7 @@ export default function InternalTransfer() {
       if (response.data.length > 0 && !senderAccountId) {
         setSenderAccountId(response.data[0].id);
       }
-    } catch (err: any) {
+    } catch {
       setError("Nie udało się pobrać Twoich kont. Spróbuj odświeżyć stronę.");
     } finally {
       setIsLoading(false);
@@ -66,15 +70,22 @@ export default function InternalTransfer() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(false);
+    if (!validateForm()) return;
+    setPin('');
+    setPinError(null);
+    setShowPinModal(true);
+  };
 
-    if (!validateForm()) {
+  const confirmWithPin = async () => {
+    if (!/^\d{4}$/.test(pin)) {
+      setPinError("PIN musi składać się z dokładnie 4 cyfr.");
       return;
     }
-
+    setPinError(null);
     setIsSubmitting(true);
     const cleanReceiverNumber = receiverAccountNumber.replace(/\s+/g, '');
 
@@ -83,26 +94,31 @@ export default function InternalTransfer() {
         senderAccountId,
         receiverAccountNumber: cleanReceiverNumber,
         amount: parseFloat(amount),
-        title
+        title,
+        pin,
       });
-      
+
       setSuccess(true);
       setReceiverAccountNumber('');
       setAmount('');
       setTitle('');
       setFieldErrors({});
-      
+      setShowPinModal(false);
+      setPin('');
+
       await loadAccounts();
-      
     } catch (err: any) {
-      setError(err.response?.data?.message || err.response?.data?.errors?.[0]?.defaultMessage || "Wystąpił błąd podczas realizacji przelewu.");
+      const msg = err.response?.data?.message
+        || err.response?.data?.errors?.[0]?.defaultMessage
+        || "Wystąpił błąd podczas realizacji przelewu.";
+      setPinError(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('pl-PL', { style: 'currency', currency }).format(amount);
+  const formatCurrency = (value: number, currency: string) => {
+    return new Intl.NumberFormat('pl-PL', { style: 'currency', currency }).format(value);
   };
 
   if (isLoading) {
@@ -129,7 +145,7 @@ export default function InternalTransfer() {
 
       <main className="flex-grow p-4 md:p-8 flex justify-center items-start pt-12">
         <div className="w-full max-w-xl bg-zinc-900 border border-zinc-800 rounded-2xl p-6 md:p-8 shadow-xl">
-          
+
           <div className="mb-8 text-center">
             <div className="w-12 h-12 bg-blue-500/10 text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
@@ -220,19 +236,66 @@ export default function InternalTransfer() {
 
             <button
               type="submit"
-              disabled={isSubmitting || accounts.length === 0}
+              disabled={accounts.length === 0}
               className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3.5 rounded-xl transition-colors mt-6 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
             >
-              {isSubmitting ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
-              ) : (
-                'Wykonaj przelew'
-              )}
+              Wykonaj przelew
             </button>
           </form>
-
         </div>
       </main>
+
+      {showPinModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-white text-center mb-1">Potwierdź PIN-em</h3>
+            <p className="text-zinc-500 text-sm text-center mb-5">
+              Wpisz 4-cyfrowy kod PIN, aby zatwierdzić przelew.
+            </p>
+
+            <input
+              type="password"
+              inputMode="numeric"
+              autoFocus
+              value={pin}
+              onChange={(e) => {
+                setPin(e.target.value.replace(/\D/g, '').slice(0, 4));
+                setPinError(null);
+              }}
+              placeholder="••••"
+              maxLength={4}
+              className="w-full bg-zinc-800 border border-zinc-700 text-white text-center tracking-[0.6em] text-2xl rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+            />
+
+            {pinError && (
+              <p className="text-red-400 text-xs mt-2 text-center">{pinError}</p>
+            )}
+
+            <div className="flex gap-3 mt-5">
+              <button
+                type="button"
+                onClick={() => { setShowPinModal(false); setPin(''); setPinError(null); }}
+                disabled={isSubmitting}
+                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+              >
+                Anuluj
+              </button>
+              <button
+                type="button"
+                onClick={confirmWithPin}
+                disabled={isSubmitting || pin.length !== 4}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                ) : (
+                  'Potwierdź'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
