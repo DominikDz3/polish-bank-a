@@ -18,3 +18,9 @@ Thumbs.db
 **/build/
 **/dist/
 **/target/
+
+#Enviroment
+.env
+.env.local
+.env.*.local
+!.env.example
