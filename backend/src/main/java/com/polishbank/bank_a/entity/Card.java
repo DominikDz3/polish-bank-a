@@ -22,11 +22,16 @@ public class Card {
     private Account account;
 
     private String cardNumber;
+
+    @Column(name = "transaction_limit")
     private BigDecimal transactionLimit;
-    
+
+    @Column(name = "daily_limit")
+    private BigDecimal dailyLimit;
+
     private String currency;
     private LocalDate expiryDate;
-    
+
     private String type;
     private boolean isBlocked;
 }

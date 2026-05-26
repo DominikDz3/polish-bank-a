@@ -10,6 +10,8 @@ import Dashboard from './pages/Dashboard.tsx'
 import TransactionHistory from './pages/TransactionHistory';
 import InternalTransfer from './pages/auth/InternalTransfer';
 import KlikCodePage from './pages/KlikCodePage';
+import AddJunior from './pages/junior/AddJunior.tsx'
+import CardsPage from './pages/cards/CardsPage.tsx'
 
 
 function App() {
@@ -50,6 +52,19 @@ function App() {
             <KlikCodePage />
           </ProtectedRoute>
         } />
+
+        <Route path={ROUTES.ADD_JUNIOR} element={
+          <ProtectedRoute>
+            <AddJunior />
+          </ProtectedRoute>
+        } />
+
+        <Route path={ROUTES.CARDS} element={
+          <ProtectedRoute>
+            <CardsPage />
+          </ProtectedRoute>
+        } />
+        
       </Routes>
     </AuthProvider>
   )

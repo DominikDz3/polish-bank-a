@@ -8,8 +8,11 @@ import java.util.List;
 import java.util.UUID;
 import java.util.Optional;
 
-public interface AccountRepository extends JpaRepository<Account, UUID>{
+@Repository
+public interface AccountRepository extends JpaRepository<Account, UUID> {
     List<Account> findByUser_CustomerNumber(String customerNumber);
 
     Optional<Account> findByAccountNumber(String accountNumber);
+
+    List<Account> findByParentAccount_User_Id(UUID parentUserId);
 }
