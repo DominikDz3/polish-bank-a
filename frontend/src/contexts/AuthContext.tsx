@@ -2,12 +2,13 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { authService } from '../services/authService';
 
-interface AuthUser { email: string; role: string; customerNumber: string }
+interface AuthUser { email: string; role: string; customerNumber: string; pinSet: boolean }
 
 interface AuthContextType {
   user: AuthUser | null;
   login: (customerNumber: string, password: string) => Promise<void>;
   register: (firstName: string, lastName: string, email: string, password: string) => Promise<string>;
+  setPin: (pin: string, confirmPin: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -22,22 +23,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
-        setUser({ email: payload.sub, role: payload.role, customerNumber: payload.customerNumber ?? '' });
+        const pinSet = localStorage.getItem('pinSet') === 'true';
+        setUser({
+          email: payload.sub,
+          role: payload.role,
+          customerNumber: payload.customerNumber ?? '',
+          pinSet,
+        });
       } catch {
         localStorage.removeItem('token');
+        localStorage.removeItem('pinSet');
       }
     }
   }, []);
 
   const login = async (customerNumber: string, password: string) => {
     const res = await authService.login(customerNumber, password);
-    setUser({ email: res.email, role: res.role, customerNumber: res.customerNumber });
+    setUser({ email: res.email, role: res.role, customerNumber: res.customerNumber, pinSet: res.pinSet });
   };
 
   const register = async (firstName: string, lastName: string, email: string, password: string): Promise<string> => {
     const res = await authService.register(firstName, lastName, email, password);
-    setUser({ email: res.email, role: res.role, customerNumber: res.customerNumber });
+    setUser({ email: res.email, role: res.role, customerNumber: res.customerNumber, pinSet: res.pinSet });
     return res.customerNumber;
+  };
+
+  const setPin = async (pin: string, confirmPin: string) => {
+    await authService.setPin(pin, confirmPin);
+    setUser((u) => (u ? { ...u, pinSet: true } : u));
   };
 
   const logout = () => {
@@ -47,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, login, register, setPin, logout, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   );

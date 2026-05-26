@@ -12,6 +12,9 @@ erDiagram
         varchar phone_number
         date date_of_birth
         varchar role
+        varchar pin_hash "BCrypt, NULL = nieustawiony"
+        int pin_failed_attempts "licznik nieudanych prób"
+        timestamp pin_locked_until "blokada PIN do tego czasu"
     }
 
     ACCOUNTS {
