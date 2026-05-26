@@ -12,7 +12,7 @@ interface AccountSummary {
 
 export default function InternalTransfer() {
   const navigate = useNavigate();
-  
+
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [senderAccountId, setSenderAccountId] = useState('');
   const [receiverAccountNumber, setReceiverAccountNumber] = useState('');
@@ -26,6 +26,13 @@ export default function InternalTransfer() {
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  const [lockedUntil, setLockedUntil] = useState<Date | null>(null);
+  const [nowTs, setNowTs] = useState<number>(() => Date.now());
+
   const loadAccounts = async () => {
     try {
       const response = await api.get('/api/accounts');
@@ -33,7 +40,7 @@ export default function InternalTransfer() {
       if (response.data.length > 0 && !senderAccountId) {
         setSenderAccountId(response.data[0].id);
       }
-    } catch (err: any) {
+    } catch {
       setError("Nie udało się pobrać Twoich kont. Spróbuj odświeżyć stronę.");
     } finally {
       setIsLoading(false);
@@ -43,6 +50,20 @@ export default function InternalTransfer() {
   useEffect(() => {
     loadAccounts();
   }, []);
+
+  useEffect(() => {
+  if (!lockedUntil) return;
+  setNowTs(Date.now());
+  const id = setInterval(() => setNowTs(Date.now()), 1000);
+  return () => clearInterval(id);
+}, [lockedUntil]);
+
+useEffect(() => {
+  if (lockedUntil && nowTs >= lockedUntil.getTime()) {
+    setLockedUntil(null);
+    setPinError(null);
+  }
+}, [nowTs, lockedUntil]);
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
@@ -66,43 +87,64 @@ export default function InternalTransfer() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(false);
-
-    if (!validateForm()) {
-      return;
-    }
-
-    setIsSubmitting(true);
-    const cleanReceiverNumber = receiverAccountNumber.replace(/\s+/g, '');
-
-    try {
-      await api.post('/api/transactions/internal', {
-        senderAccountId,
-        receiverAccountNumber: cleanReceiverNumber,
-        amount: parseFloat(amount),
-        title
-      });
-      
-      setSuccess(true);
-      setReceiverAccountNumber('');
-      setAmount('');
-      setTitle('');
-      setFieldErrors({});
-      
-      await loadAccounts();
-      
-    } catch (err: any) {
-      setError(err.response?.data?.message || err.response?.data?.errors?.[0]?.defaultMessage || "Wystąpił błąd podczas realizacji przelewu.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    if (!validateForm()) return;
+    setPin('');
+    setPinError(null);
+    setShowPinModal(true);
   };
 
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('pl-PL', { style: 'currency', currency }).format(amount);
+  const confirmWithPin = async () => {
+  if (lockedUntil) return;
+  if (!/^\d{4}$/.test(pin)) {
+    setPinError("PIN musi składać się z dokładnie 4 cyfr.");
+    return;
+  }
+  setPinError(null);
+  setIsSubmitting(true);
+  const cleanReceiverNumber = receiverAccountNumber.replace(/\s+/g, '');
+
+  try {
+    await api.post('/api/transactions/internal', {
+      senderAccountId,
+      receiverAccountNumber: cleanReceiverNumber,
+      amount: parseFloat(amount),
+      title,
+      pin,
+    });
+
+    setSuccess(true);
+    setReceiverAccountNumber('');
+    setAmount('');
+    setTitle('');
+    setFieldErrors({});
+    setShowPinModal(false);
+    setPin('');
+  } catch (err: any) {
+    const status = err.response?.status;
+    const data = err.response?.data;
+    if (status === 423 && data?.lockedUntil) {
+      setLockedUntil(new Date(data.lockedUntil));
+      setPin('');
+      setPinError(null);
+    } else {
+      const msg = data?.detail
+        || data?.message
+        || data?.errors?.[0]?.defaultMessage
+        || "Wystąpił błąd podczas realizacji przelewu.";
+      setPinError(msg);
+    }
+  } finally {
+    setIsSubmitting(false);
+    await loadAccounts();
+  }
+};
+
+  const formatCurrency = (value: number, currency: string) => {
+    return new Intl.NumberFormat('pl-PL', { style: 'currency', currency }).format(value);
   };
 
   if (isLoading) {
@@ -112,6 +154,13 @@ export default function InternalTransfer() {
       </div>
     );
   }
+
+  const formatCountdown = (ms: number) => {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+};
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col">
@@ -129,7 +178,7 @@ export default function InternalTransfer() {
 
       <main className="flex-grow p-4 md:p-8 flex justify-center items-start pt-12">
         <div className="w-full max-w-xl bg-zinc-900 border border-zinc-800 rounded-2xl p-6 md:p-8 shadow-xl">
-          
+
           <div className="mb-8 text-center">
             <div className="w-12 h-12 bg-blue-500/10 text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
@@ -220,19 +269,101 @@ export default function InternalTransfer() {
 
             <button
               type="submit"
-              disabled={isSubmitting || accounts.length === 0}
+              disabled={accounts.length === 0}
               className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3.5 rounded-xl transition-colors mt-6 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+            >
+              Wykonaj przelew
+            </button>
+          </form>
+        </div>
+      </main>
+
+      {showPinModal && (
+  <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+    <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl">
+      {lockedUntil ? (
+        <>
+          <div className="w-14 h-14 bg-red-500/10 border border-red-500/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-white text-center mb-1">PIN został zablokowany</h3>
+          <p className="text-zinc-400 text-sm text-center mb-5">
+            Wpisałeś nieprawidłowy PIN zbyt wiele razy. Z powodów bezpieczeństwa
+            potwierdzanie transakcji jest tymczasowo niedostępne.
+          </p>
+
+          <div className="bg-zinc-950 border border-red-500/30 rounded-xl px-4 py-5 mb-5 text-center">
+            <p className="text-xs uppercase tracking-wider text-zinc-500 mb-1">Pozostały czas blokady</p>
+            <p className="text-4xl font-mono font-bold text-red-400 tabular-nums">
+              {formatCountdown(lockedUntil.getTime() - nowTs)}
+            </p>
+            <p className="text-xs text-zinc-600 mt-2">
+              Odblokowanie: {lockedUntil.toLocaleTimeString('pl-PL')}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => { setShowPinModal(false); }}
+            className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2.5 rounded-lg text-sm transition-colors"
+          >
+            Zamknij
+          </button>
+        </>
+      ) : (
+        <>
+          <h3 className="text-lg font-semibold text-white text-center mb-1">Potwierdź PIN-em</h3>
+          <p className="text-zinc-500 text-sm text-center mb-5">
+            Wpisz 4-cyfrowy kod PIN, aby zatwierdzić przelew.
+          </p>
+
+          <input
+            type="password"
+            inputMode="numeric"
+            autoFocus
+            value={pin}
+            onChange={(e) => {
+              setPin(e.target.value.replace(/\D/g, '').slice(0, 4));
+              setPinError(null);
+            }}
+            placeholder="••••"
+            maxLength={4}
+            className="w-full bg-zinc-800 border border-zinc-700 text-white text-center tracking-[0.6em] text-2xl rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+          />
+
+          {pinError && (
+            <p className="text-red-400 text-xs mt-2 text-center">{pinError}</p>
+          )}
+
+          <div className="flex gap-3 mt-5">
+            <button
+              type="button"
+              onClick={() => { setShowPinModal(false); setPin(''); setPinError(null); }}
+              disabled={isSubmitting}
+              className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+            >
+              Anuluj
+            </button>
+            <button
+              type="button"
+              onClick={confirmWithPin}
+              disabled={isSubmitting || pin.length !== 4}
+              className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
             >
               {isSubmitting ? (
                 <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
               ) : (
-                'Wykonaj przelew'
+                'Potwierdź'
               )}
             </button>
-          </form>
-
-        </div>
-      </main>
+          </div>
+        </>
+      )}
+    </div>
+  </div>
+)}
     </div>
   );
 }

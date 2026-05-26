@@ -1,5 +1,6 @@
 package com.polishbank.bank_a.domain.transaction;
 
+import com.polishbank.bank_a.domain.auth.PinService;
 import com.polishbank.bank_a.domain.transaction.dto.InternalTransferRequest;
 import com.polishbank.bank_a.domain.transaction.dto.TransactionResponse;
 import com.polishbank.bank_a.domain.user.User;
@@ -24,6 +25,7 @@ public class TransactionService {
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
+    private final PinService pinService;
 
     @Transactional
     public void processInternalTransfer(InternalTransferRequest request, String customerNumber) {
@@ -33,6 +35,8 @@ public class TransactionService {
         if (!senderAccount.getUser().getCustomerNumber().equals(customerNumber)) {
             throw new IllegalStateException("Brak uprawnień do tego konta.");
         }
+
+        pinService.verifyPin(senderAccount.getUser(), request.pin());
 
         Account receiverAccount = accountRepository.findByAccountNumber(request.receiverAccountNumber())
                 .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono konta odbiorcy w naszym banku."));

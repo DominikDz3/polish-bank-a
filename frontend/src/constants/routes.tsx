@@ -2,6 +2,7 @@ export const ROUTES = {
     HOME: "/",
     LOGIN: '/login',
     REGISTER: '/register',
+    SETUP_PIN: '/setup-pin',
     DASHBOARD: '/dashboard',
     INTERNAL_TRANSFER: '/transfer/internal',
     TRANSACTION_HISTORY: '/history/:accountId',

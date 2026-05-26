@@ -56,7 +56,7 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.register(request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Email already in use");
+                .hasMessage("Email już jest w użyciu");
 
         verify(userRepository, never()).save(any());
     }
