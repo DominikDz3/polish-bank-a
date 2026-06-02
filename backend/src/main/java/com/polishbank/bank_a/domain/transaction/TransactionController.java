@@ -24,12 +24,15 @@ public class TransactionController {
 
     @PostMapping("/internal")
     public ResponseEntity<?> sendInternalTransfer(
-            @Valid @RequestBody InternalTransferRequest request,
-            Authentication authentication) {
+        @Valid @RequestBody InternalTransferRequest request,
+        Authentication authentication) {
         User user = userRepository.findByEmail(authentication.getName())
-                .orElseThrow(() -> new IllegalStateException("Użytkownik nie znaleziony."));
-        transactionService.processInternalTransfer(request, user.getCustomerNumber());
-        return ResponseEntity.ok(Map.of("message", "Przelew został zrealizowany pomyślnie."));
+            .orElseThrow(() -> new IllegalStateException("Użytkownik nie znaleziony."));
+        String status = transactionService.processInternalTransfer(request, user.getCustomerNumber());
+        String message = "PENDING_APPROVAL".equals(status)
+            ? "Przelew został wysłany do zatwierdzenia przez rodzica."
+            : "Przelew został zrealizowany pomyślnie.";
+        return ResponseEntity.ok(Map.of("message", message, "status", status));
     }
 
     @GetMapping("/history/{accountId}")
