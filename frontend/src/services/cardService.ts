@@ -21,8 +21,17 @@ export interface CardPaymentPayload {
   currency: string;
 }
 
+export interface UpdateCardLimitsPayload {
+  transactionLimit?: number;
+  dailyLimit?: number;
+}
+
 export const cardService = {
   list: () => api.get<CardSummary[]>('/api/cards').then(r => r.data),
+  listForJunior: (juniorAccountId: string) =>
+    api.get<CardSummary[]>(`/api/cards/junior/${juniorAccountId}`).then(r => r.data),
   pay: (payload: CardPaymentPayload) =>
-    api.post<{ message: string }>('/api/cards/payment', payload).then(r => r.data),
+    api.post<{ message: string; status: string }>('/api/cards/payment', payload).then(r => r.data),
+  updateLimits: (cardId: string, payload: UpdateCardLimitsPayload) =>
+    api.patch<{ message: string }>(`/api/cards/${cardId}/limits`, payload).then(r => r.data),
 };

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AlertCircle, Settings } from 'lucide-react';
 
 interface AccountSummary {
   id: string;
@@ -32,6 +33,8 @@ export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab: TabType = (searchParams.get('tab') === 'junior') ? 'JUNIOR' : 'PERSONAL';
 
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+
   const setActiveTab = (tab: TabType) => {
     setSearchParams(tab === 'JUNIOR' ? { tab: 'junior' } : {});
   };
@@ -54,6 +57,10 @@ export default function Dashboard() {
             juniorLastName: j.lastName,
           }));
           setParentJuniors(mapped);
+          try {
+            const c = await api.get('/api/junior/pending-approvals/count');
+            setPendingApprovalsCount(c.data.count || 0);
+          } catch { /* nieważne jeśli się nie uda */ }
         } catch { /* user nie jest rodzicem, ignorujemy */ }
       } catch (err: any) {
         setError(err.response?.data?.message || "Nie udało się pobrać danych konta.");
@@ -176,6 +183,26 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold text-zinc-100">Witaj!</h1>
         </header>
 
+        {!isJunior && pendingApprovalsCount > 0 && (
+          <div
+            onClick={() => navigate('/junior/approvals')}
+            className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6 cursor-pointer hover:bg-amber-500/20 transition-colors flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <AlertCircle className="text-amber-400 shrink-0" size={22} />
+              <div>
+                <p className="text-amber-200 font-medium">
+                  Masz {pendingApprovalsCount} {pendingApprovalsCount === 1 ? 'transakcję' : pendingApprovalsCount < 5 ? 'transakcje' : 'transakcji'} do zatwierdzenia
+                </p>
+                <p className="text-amber-300/60 text-sm">Twoje dzieci czekają na decyzję</p>
+              </div>
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500"></div>
@@ -271,6 +298,11 @@ export default function Dashboard() {
                             className="flex-1 bg-zinc-800 text-zinc-300 py-2 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors"
                             onClick={() => navigate(`/history/${account.id}?from=junior`)}>
                             Historia dziecka
+                          </button>
+                          <button
+                            className="flex-1 bg-zinc-800 text-zinc-300 py-2 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors flex items-center justify-center gap-1.5"
+                            onClick={() => navigate(`/junior/${account.id}/manage`)}>
+                            <Settings size={14} /> Zarządzaj
                           </button>
                         </div>
                       </div>

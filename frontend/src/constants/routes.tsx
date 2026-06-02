@@ -9,4 +9,6 @@ export const ROUTES = {
     KLIK_CODE: '/klik/code',
     ADD_JUNIOR: '/junior/add',
     CARDS: '/cards',
+    JUNIOR_APPROVALS: '/junior/approvals',
+    MANAGE_JUNIOR: '/junior/:accountId/manage',
 };
