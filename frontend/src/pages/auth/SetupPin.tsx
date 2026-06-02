@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const SetupPin: React.FC = () => {
   const navigate = useNavigate();
-  const { setPin, user } = useAuth();
+  const { setPin, user, logout } = useAuth();
   const [pin, setPinValue] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState('');
@@ -42,81 +42,107 @@ const SetupPin: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8">
-          <div className="w-12 h-12 bg-blue-500/10 border border-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <ShieldCheck className="text-blue-400" size={22} />
+    <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col">
+      <nav className="bg-zinc-900/80 backdrop-blur-md border-b border-zinc-800 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="text-xl font-bold tracking-tight text-white">
+              <span className="text-blue-400">Bankly</span>
+            </div>
+            <span className="text-zinc-500 text-sm hidden md:inline">/ Ustaw kod PIN</span>
           </div>
-          <h1 className="text-xl font-semibold text-white text-center mb-2">Ustaw kod PIN</h1>
-          <p className="text-zinc-500 text-sm text-center mb-6">
-            {user?.customerNumber && (
-              <>Numer klienta: <span className="text-zinc-300 font-mono">{user.customerNumber}</span><br /></>
-            )}
-            Kod PIN będzie potrzebny do potwierdzania wszystkich operacji finansowych.
-          </p>
 
-          {error && (
-            <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg px-4 py-3 mb-5">
-              <AlertCircle size={16} className="shrink-0" />
-              {error}
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex flex-col text-right">
+              <span className="text-zinc-200 text-sm font-medium">{user?.email}</span>
+              <span className="text-zinc-500 text-xs mt-0.5 tracking-wide">
+                Numer klienta: <span className="text-zinc-400">{user?.customerNumber}</span>
+              </span>
             </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1.5">Nowy PIN (4 cyfry)</label>
-              <input
-                type="password"
-                inputMode="numeric"
-                autoComplete="new-password"
-                value={pin}
-                onChange={(e) => onlyDigits(e.target.value, setPinValue)}
-                placeholder="••••"
-                maxLength={4}
-                className="w-full bg-zinc-800 border border-zinc-700 text-white text-center tracking-[0.6em] text-2xl rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1.5">Potwierdź PIN</label>
-              <input
-                type="password"
-                inputMode="numeric"
-                autoComplete="new-password"
-                value={confirmPin}
-                onChange={(e) => onlyDigits(e.target.value, setConfirmPin)}
-                placeholder="••••"
-                maxLength={4}
-                className={`w-full bg-zinc-800 border text-white text-center tracking-[0.6em] text-2xl rounded-lg px-4 py-3 focus:outline-none focus:ring-1 transition-colors ${
-                  confirmPin && confirmPin !== pin
-                    ? 'border-red-500/50 focus:border-red-500 focus:ring-red-500'
-                    : 'border-zinc-700 focus:border-blue-500 focus:ring-blue-500'
-                }`}
-              />
-              {confirmPin && confirmPin !== pin && (
-                <p className="text-xs text-red-400 mt-1">Kody PIN nie są identyczne</p>
-              )}
-            </div>
-
+            <div className="h-8 w-px bg-zinc-800 hidden md:block"></div>
             <button
-              type="submit"
-              disabled={!isValid || isLoading}
-              className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+              onClick={logout}
+              className="text-zinc-400 hover:text-white px-4 py-2 rounded-lg font-medium transition-colors duration-150"
             >
-              {isLoading ? (
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                'Zapisz PIN'
-              )}
+              Wyloguj się
             </button>
-          </form>
+          </div>
         </div>
+      </nav>
 
-        <p className="text-center text-xs text-zinc-600 mt-6">
-          Twojego PIN-u nikomu nie podawaj. Jest hashowany i przechowywany w bezpieczny sposób.
-        </p>
-      </div>
+      <main className="flex-grow flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8">
+            <div className="w-12 h-12 bg-blue-500/10 border border-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <ShieldCheck className="text-blue-400" size={22} />
+            </div>
+            <h1 className="text-xl font-semibold text-white text-center mb-2">Ustaw kod PIN</h1>
+            <p className="text-zinc-500 text-sm text-center mb-6">
+              Kod PIN będzie potrzebny do potwierdzania wszystkich operacji finansowych.
+            </p>
+
+            {error && (
+              <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg px-4 py-3 mb-5">
+                <AlertCircle size={16} className="shrink-0" />
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Nowy PIN (4 cyfry)</label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="new-password"
+                  value={pin}
+                  onChange={(e) => onlyDigits(e.target.value, setPinValue)}
+                  placeholder="••••"
+                  maxLength={4}
+                  className="w-full bg-zinc-800 border border-zinc-700 text-white text-center tracking-[0.6em] text-2xl rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Potwierdź PIN</label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="new-password"
+                  value={confirmPin}
+                  onChange={(e) => onlyDigits(e.target.value, setConfirmPin)}
+                  placeholder="••••"
+                  maxLength={4}
+                  className={`w-full bg-zinc-800 border text-white text-center tracking-[0.6em] text-2xl rounded-lg px-4 py-3 focus:outline-none focus:ring-1 transition-colors ${
+                    confirmPin && confirmPin !== pin
+                      ? 'border-red-500/50 focus:border-red-500 focus:ring-red-500'
+                      : 'border-zinc-700 focus:border-blue-500 focus:ring-blue-500'
+                  }`}
+                />
+                {confirmPin && confirmPin !== pin && (
+                  <p className="text-xs text-red-400 mt-1">Kody PIN nie są identyczne</p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={!isValid || isLoading}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+              >
+                {isLoading ? (
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  'Zapisz PIN'
+                )}
+              </button>
+            </form>
+          </div>
+
+          <p className="text-center text-xs text-zinc-600 mt-6">
+            Twojego PIN-u nikomu nie podawaj. Jest hashowany i przechowywany w bezpieczny sposób.
+          </p>
+        </div>
+      </main>
     </div>
   );
 };

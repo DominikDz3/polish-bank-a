@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface AccountSummary {
   id: string;
@@ -12,6 +13,7 @@ interface AccountSummary {
 
 export default function InternalTransfer() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [senderAccountId, setSenderAccountId] = useState('');
@@ -22,7 +24,7 @@ export default function InternalTransfer() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -52,18 +54,18 @@ export default function InternalTransfer() {
   }, []);
 
   useEffect(() => {
-  if (!lockedUntil) return;
-  setNowTs(Date.now());
-  const id = setInterval(() => setNowTs(Date.now()), 1000);
-  return () => clearInterval(id);
-}, [lockedUntil]);
+    if (!lockedUntil) return;
+    setNowTs(Date.now());
+    const id = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [lockedUntil]);
 
-useEffect(() => {
-  if (lockedUntil && nowTs >= lockedUntil.getTime()) {
-    setLockedUntil(null);
-    setPinError(null);
-  }
-}, [nowTs, lockedUntil]);
+  useEffect(() => {
+    if (lockedUntil && nowTs >= lockedUntil.getTime()) {
+      setLockedUntil(null);
+      setPinError(null);
+    }
+  }, [nowTs, lockedUntil]);
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
@@ -90,7 +92,7 @@ useEffect(() => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setSuccess(false);
+    setSuccessMessage(null);
     if (!validateForm()) return;
     setPin('');
     setPinError(null);
@@ -98,53 +100,64 @@ useEffect(() => {
   };
 
   const confirmWithPin = async () => {
-  if (lockedUntil) return;
-  if (!/^\d{4}$/.test(pin)) {
-    setPinError("PIN musi składać się z dokładnie 4 cyfr.");
-    return;
-  }
-  setPinError(null);
-  setIsSubmitting(true);
-  const cleanReceiverNumber = receiverAccountNumber.replace(/\s+/g, '');
-
-  try {
-    await api.post('/api/transactions/internal', {
-      senderAccountId,
-      receiverAccountNumber: cleanReceiverNumber,
-      amount: parseFloat(amount),
-      title,
-      pin,
-    });
-
-    setSuccess(true);
-    setReceiverAccountNumber('');
-    setAmount('');
-    setTitle('');
-    setFieldErrors({});
-    setShowPinModal(false);
-    setPin('');
-  } catch (err: any) {
-    const status = err.response?.status;
-    const data = err.response?.data;
-    if (status === 423 && data?.lockedUntil) {
-      setLockedUntil(new Date(data.lockedUntil));
-      setPin('');
-      setPinError(null);
-    } else {
-      const msg = data?.detail
-        || data?.message
-        || data?.errors?.[0]?.defaultMessage
-        || "Wystąpił błąd podczas realizacji przelewu.";
-      setPinError(msg);
+    if (lockedUntil) return;
+    if (!/^\d{4}$/.test(pin)) {
+      setPinError("PIN musi składać się z dokładnie 4 cyfr.");
+      return;
     }
-  } finally {
-    setIsSubmitting(false);
-    await loadAccounts();
-  }
-};
+    setPinError(null);
+    setIsSubmitting(true);
+    const cleanReceiverNumber = receiverAccountNumber.replace(/\s+/g, '');
+
+    try {
+      const res = await api.post('/api/transactions/internal', {
+        senderAccountId,
+        receiverAccountNumber: cleanReceiverNumber,
+        amount: parseFloat(amount),
+        title,
+        pin,
+      });
+
+      const msg = res.data?.status === 'PENDING_APPROVAL'
+        ? 'Transakcja czeka na zatwierdzenie rodzica.'
+        : 'Przelew został zrealizowany pomyślnie.';
+      setSuccessMessage(msg);
+
+      setReceiverAccountNumber('');
+      setAmount('');
+      setTitle('');
+      setFieldErrors({});
+      setShowPinModal(false);
+      setPin('');
+    } catch (err: any) {
+      const status = err.response?.status;
+      const data = err.response?.data;
+      if (status === 423 && data?.lockedUntil) {
+        setLockedUntil(new Date(data.lockedUntil));
+        setPin('');
+        setPinError(null);
+      } else {
+        const msg = data?.detail
+          || data?.message
+          || data?.errors?.[0]?.defaultMessage
+          || "Wystąpił błąd podczas realizacji przelewu.";
+        setPinError(msg);
+      }
+    } finally {
+      setIsSubmitting(false);
+      await loadAccounts();
+    }
+  };
 
   const formatCurrency = (value: number, currency: string) => {
     return new Intl.NumberFormat('pl-PL', { style: 'currency', currency }).format(value);
+  };
+
+  const formatCountdown = (ms: number) => {
+    const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   if (isLoading) {
@@ -155,24 +168,38 @@ useEffect(() => {
     );
   }
 
-  const formatCountdown = (ms: number) => {
-  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-};
-
   return (
     <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col">
       <nav className="bg-zinc-900/80 backdrop-blur-md border-b border-zinc-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="text-xl font-bold tracking-tight text-white">
-            <span className="text-blue-400">Bankly</span>
+          <div className="flex items-center gap-4">
+            <button type="button" onClick={() => navigate(-1)}
+              className="text-zinc-400 hover:text-white flex items-center gap-2 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+              Wróć
+            </button>
+            <div className="h-6 w-px bg-zinc-800"></div>
+            <div className="text-xl font-bold tracking-tight text-white">
+              <span className="text-blue-400">Bankly</span>
+            </div>
+            <span className="text-zinc-500 text-sm hidden md:inline">/ Nowy przelew wewnętrzny</span>
           </div>
-          <button onClick={() => navigate(-1)} className="text-zinc-400 hover:text-white flex items-center gap-2 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-            Wróć
-          </button>
+
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex flex-col text-right">
+              <span className="text-zinc-200 text-sm font-medium">{user?.email}</span>
+              <span className="text-zinc-500 text-xs mt-0.5 tracking-wide">
+                Numer klienta: <span className="text-zinc-400">{user?.customerNumber}</span>
+              </span>
+            </div>
+            <div className="h-8 w-px bg-zinc-800 hidden md:block"></div>
+            <button
+              onClick={logout}
+              className="text-zinc-400 hover:text-white px-4 py-2 rounded-lg font-medium transition-colors duration-150"
+            >
+              Wyloguj się
+            </button>
+          </div>
         </div>
       </nav>
 
@@ -187,10 +214,10 @@ useEffect(() => {
             <p className="text-zinc-500 text-sm mt-1">Przelej środki na inne konto w naszym banku.</p>
           </div>
 
-          {success && (
+          {successMessage && (
             <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-4 rounded-xl mb-6 flex items-center gap-3">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-              <span>Przelew został zrealizowany pomyślnie.</span>
+              <span>{successMessage}</span>
             </div>
           )}
 
@@ -279,91 +306,91 @@ useEffect(() => {
       </main>
 
       {showPinModal && (
-  <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
-    <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl">
-      {lockedUntil ? (
-        <>
-          <div className="w-14 h-14 bg-red-500/10 border border-red-500/30 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl">
+            {lockedUntil ? (
+              <>
+                <div className="w-14 h-14 bg-red-500/10 border border-red-500/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-white text-center mb-1">PIN został zablokowany</h3>
+                <p className="text-zinc-400 text-sm text-center mb-5">
+                  Wpisałeś nieprawidłowy PIN zbyt wiele razy. Z powodów bezpieczeństwa
+                  potwierdzanie transakcji jest tymczasowo niedostępne.
+                </p>
+
+                <div className="bg-zinc-950 border border-red-500/30 rounded-xl px-4 py-5 mb-5 text-center">
+                  <p className="text-xs uppercase tracking-wider text-zinc-500 mb-1">Pozostały czas blokady</p>
+                  <p className="text-4xl font-mono font-bold text-red-400 tabular-nums">
+                    {formatCountdown(lockedUntil.getTime() - nowTs)}
+                  </p>
+                  <p className="text-xs text-zinc-600 mt-2">
+                    Odblokowanie: {lockedUntil.toLocaleTimeString('pl-PL')}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => { setShowPinModal(false); }}
+                  className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2.5 rounded-lg text-sm transition-colors"
+                >
+                  Zamknij
+                </button>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-white text-center mb-1">Potwierdź PIN-em</h3>
+                <p className="text-zinc-500 text-sm text-center mb-5">
+                  Wpisz 4-cyfrowy kod PIN, aby zatwierdzić przelew.
+                </p>
+
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoFocus
+                  value={pin}
+                  onChange={(e) => {
+                    setPin(e.target.value.replace(/\D/g, '').slice(0, 4));
+                    setPinError(null);
+                  }}
+                  placeholder="••••"
+                  maxLength={4}
+                  className="w-full bg-zinc-800 border border-zinc-700 text-white text-center tracking-[0.6em] text-2xl rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                />
+
+                {pinError && (
+                  <p className="text-red-400 text-xs mt-2 text-center">{pinError}</p>
+                )}
+
+                <div className="flex gap-3 mt-5">
+                  <button
+                    type="button"
+                    onClick={() => { setShowPinModal(false); setPin(''); setPinError(null); }}
+                    disabled={isSubmitting}
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmWithPin}
+                    disabled={isSubmitting || pin.length !== 4}
+                    className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    {isSubmitting ? (
+                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                    ) : (
+                      'Potwierdź'
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
-          <h3 className="text-lg font-semibold text-white text-center mb-1">PIN został zablokowany</h3>
-          <p className="text-zinc-400 text-sm text-center mb-5">
-            Wpisałeś nieprawidłowy PIN zbyt wiele razy. Z powodów bezpieczeństwa
-            potwierdzanie transakcji jest tymczasowo niedostępne.
-          </p>
-
-          <div className="bg-zinc-950 border border-red-500/30 rounded-xl px-4 py-5 mb-5 text-center">
-            <p className="text-xs uppercase tracking-wider text-zinc-500 mb-1">Pozostały czas blokady</p>
-            <p className="text-4xl font-mono font-bold text-red-400 tabular-nums">
-              {formatCountdown(lockedUntil.getTime() - nowTs)}
-            </p>
-            <p className="text-xs text-zinc-600 mt-2">
-              Odblokowanie: {lockedUntil.toLocaleTimeString('pl-PL')}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => { setShowPinModal(false); }}
-            className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2.5 rounded-lg text-sm transition-colors"
-          >
-            Zamknij
-          </button>
-        </>
-      ) : (
-        <>
-          <h3 className="text-lg font-semibold text-white text-center mb-1">Potwierdź PIN-em</h3>
-          <p className="text-zinc-500 text-sm text-center mb-5">
-            Wpisz 4-cyfrowy kod PIN, aby zatwierdzić przelew.
-          </p>
-
-          <input
-            type="password"
-            inputMode="numeric"
-            autoFocus
-            value={pin}
-            onChange={(e) => {
-              setPin(e.target.value.replace(/\D/g, '').slice(0, 4));
-              setPinError(null);
-            }}
-            placeholder="••••"
-            maxLength={4}
-            className="w-full bg-zinc-800 border border-zinc-700 text-white text-center tracking-[0.6em] text-2xl rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-          />
-
-          {pinError && (
-            <p className="text-red-400 text-xs mt-2 text-center">{pinError}</p>
-          )}
-
-          <div className="flex gap-3 mt-5">
-            <button
-              type="button"
-              onClick={() => { setShowPinModal(false); setPin(''); setPinError(null); }}
-              disabled={isSubmitting}
-              className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
-            >
-              Anuluj
-            </button>
-            <button
-              type="button"
-              onClick={confirmWithPin}
-              disabled={isSubmitting || pin.length !== 4}
-              className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
-              ) : (
-                'Potwierdź'
-              )}
-            </button>
-          </div>
-        </>
+        </div>
       )}
-    </div>
-  </div>
-)}
     </div>
   );
 }
