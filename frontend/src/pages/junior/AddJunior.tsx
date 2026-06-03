@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AlertCircle, UserPlus } from 'lucide-react';
 import { api } from '../../services/api';
 import { juniorService } from '../../services/juniorService';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface AccountSummary {
   id: string;
@@ -14,6 +15,7 @@ interface AccountSummary {
 
 const AddJunior: React.FC = () => {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [form, setForm] = useState({
     firstName: '',
@@ -85,20 +87,45 @@ const AddJunior: React.FC = () => {
     }
   };
 
+  const renderNav = () => (
+    <nav className="bg-zinc-900/80 backdrop-blur-md border-b border-zinc-800 sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button type="button" onClick={() => navigate('/dashboard?tab=junior')}
+            className="text-zinc-400 hover:text-white flex items-center gap-2 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            Wróć
+          </button>
+          <div className="h-6 w-px bg-zinc-800"></div>
+          <div className="text-xl font-bold tracking-tight text-white">
+            <span className="text-blue-400">Bankly</span>
+          </div>
+          <span className="text-zinc-500 text-sm hidden md:inline">/ Nowe konto Junior</span>
+        </div>
+
+        <div className="flex items-center gap-6">
+          <div className="hidden md:flex flex-col text-right">
+            <span className="text-zinc-200 text-sm font-medium">{user?.email}</span>
+            <span className="text-zinc-500 text-xs mt-0.5 tracking-wide">
+              Numer klienta: <span className="text-zinc-400">{user?.customerNumber}</span>
+            </span>
+          </div>
+          <div className="h-8 w-px bg-zinc-800 hidden md:block"></div>
+          <button
+            onClick={logout}
+            className="text-zinc-400 hover:text-white px-4 py-2 rounded-lg font-medium transition-colors duration-150"
+          >
+            Wyloguj się
+          </button>
+        </div>
+      </div>
+    </nav>
+  );
+
   if (success) {
     return (
       <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col">
-        <nav className="bg-zinc-900/80 backdrop-blur-md border-b border-zinc-800 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div className="text-xl font-bold tracking-tight text-white">
-              <span className="text-blue-400">Bankly</span>
-            </div>
-            <button type="button" onClick={() => navigate('/dashboard?tab=junior')} className="text-zinc-400 hover:text-white flex items-center gap-2 transition-colors">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-              Wróć
-            </button>
-          </div>
-        </nav>
+        {renderNav()}
 
         <main className="flex-grow flex items-center justify-center px-4">
           <div className="w-full max-w-md text-center">
@@ -132,17 +159,7 @@ const AddJunior: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col">
-      <nav className="bg-zinc-900/80 backdrop-blur-md border-b border-zinc-800 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="text-xl font-bold tracking-tight text-white">
-            <span className="text-blue-400">Bankly</span>
-          </div>
-          <button type="button" onClick={() => navigate(-1)} className="text-zinc-400 hover:text-white flex items-center gap-2 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-            Wróć
-          </button>
-        </div>
-      </nav>
+      {renderNav()}
 
       <main className="flex-grow flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
@@ -195,7 +212,7 @@ const AddJunior: React.FC = () => {
                 </select>
               </div>
 
-                            <button type="submit" disabled={isLoading}
+              <button type="submit" disabled={isLoading}
                 className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 mt-2">
                 {isLoading ? (
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

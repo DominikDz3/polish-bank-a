@@ -3,9 +3,11 @@ import { CreditCard, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cardService } from '../../services/cardService';
 import type { CardSummary } from '../../services/cardService';
+import { useAuth } from '../../contexts/AuthContext';
 
 const CardsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [cards, setCards] = useState<CardSummary[]>([]);
   const [selected, setSelected] = useState<string>('');
   const [amount, setAmount] = useState('');
@@ -30,13 +32,16 @@ const CardsPage: React.FC = () => {
     if (!card) return;
     setIsLoading(true);
     try {
-      await cardService.pay({
+      const res = await cardService.pay({
         cardId: selected,
         amount: parseFloat(amount),
         merchant,
         currency: card.currency,
       });
-      setSuccess(`Płatność ${amount} ${card.currency} u ${merchant} została zrealizowana.`);
+      const msg = res.status === 'PENDING_APPROVAL'
+        ? 'Transakcja czeka na zatwierdzenie rodzica.'
+        : `Płatność ${amount} ${card.currency} u ${merchant} została zrealizowana.`;
+      setSuccess(msg);
       setAmount('');
       setMerchant('');
       await load();
@@ -56,13 +61,34 @@ const CardsPage: React.FC = () => {
     <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col">
       <nav className="bg-zinc-900/80 backdrop-blur-md border-b border-zinc-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="text-xl font-bold tracking-tight text-white">
-            <span className="text-blue-400">Bankly</span>
+          <div className="flex items-center gap-4">
+            <button type="button" onClick={() => navigate(-1)}
+              className="text-zinc-400 hover:text-white flex items-center gap-2 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+              Wróć
+            </button>
+            <div className="h-6 w-px bg-zinc-800"></div>
+            <div className="text-xl font-bold tracking-tight text-white">
+              <span className="text-blue-400">Bankly</span>
+            </div>
+            <span className="text-zinc-500 text-sm hidden md:inline">/ Moje karty</span>
           </div>
-          <button onClick={() => navigate(-1)} className="text-zinc-400 hover:text-white flex items-center gap-2 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-            Wróć
-          </button>
+
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex flex-col text-right">
+              <span className="text-zinc-200 text-sm font-medium">{user?.email}</span>
+              <span className="text-zinc-500 text-xs mt-0.5 tracking-wide">
+                Numer klienta: <span className="text-zinc-400">{user?.customerNumber}</span>
+              </span>
+            </div>
+            <div className="h-8 w-px bg-zinc-800 hidden md:block"></div>
+            <button
+              onClick={logout}
+              className="text-zinc-400 hover:text-white px-4 py-2 rounded-lg font-medium transition-colors duration-150"
+            >
+              Wyloguj się
+            </button>
+          </div>
         </div>
       </nav>
 
