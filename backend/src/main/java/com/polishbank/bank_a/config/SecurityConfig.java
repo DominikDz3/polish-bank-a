@@ -41,7 +41,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
-                        .requestMatchers("/api/auth/pin").authenticated()                        .requestMatchers("/api/webhooks/**").permitAll()
+                        .requestMatchers("/api/auth/pin").authenticated()                        
+                        .requestMatchers("/api/webhooks/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())
