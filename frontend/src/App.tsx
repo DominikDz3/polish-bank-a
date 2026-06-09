@@ -6,6 +6,7 @@ import KlikAuthorizationWatcher from './components/KlikAuthorizationWatcher'
 import Home from './pages/Home.tsx'
 import Login from './pages/auth/Login.tsx'
 import Register from './pages/auth/Register.tsx'
+import SetupPin from './pages/auth/SetupPin.tsx'
 import Dashboard from './pages/Dashboard.tsx'
 import TransactionHistory from './pages/TransactionHistory';
 import InternalTransfer from './pages/auth/InternalTransfer';
@@ -14,7 +15,6 @@ import AddJunior from './pages/junior/AddJunior.tsx'
 import CardsPage from './pages/cards/CardsPage.tsx'
 import PendingApprovals from './pages/junior/PendingApprovals.tsx'
 import ManageJunior from './pages/junior/ManageJunior.tsx'
-import SetupPin from './pages/auth/SetupPin.tsx'
 
 
 function App() {
@@ -25,6 +25,11 @@ function App() {
         <Route path={ROUTES.HOME} element={<Home/>}/>
         <Route path={ROUTES.LOGIN} element={<Login/>}/>
         <Route path={ROUTES.REGISTER} element={<Register/>}/>
+        <Route path={ROUTES.SETUP_PIN} element={
+          <ProtectedRoute>
+            <SetupPin />
+          </ProtectedRoute>
+        }/>
         <Route path={ROUTES.DASHBOARD} element={
           <ProtectedRoute>
             <Dashboard/>
@@ -69,12 +74,6 @@ function App() {
             <ManageJunior />
           </ProtectedRoute>
         } />
-
-        <Route path={ROUTES.SETUP_PIN} element={
-          <ProtectedRoute>
-            <SetupPin />
-          </ProtectedRoute>
-        }/>
       </Routes>
     </AuthProvider>
   )
