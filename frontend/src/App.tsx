@@ -7,9 +7,14 @@ import Home from './pages/Home.tsx'
 import Login from './pages/auth/Login.tsx'
 import Register from './pages/auth/Register.tsx'
 import Dashboard from './pages/Dashboard.tsx'
-import TransactionHistory from './pages/TransactionHistory'
-import InternalTransfer from './pages/auth/InternalTransfer'
-import KlikCodePage from './pages/KlikCodePage'
+import TransactionHistory from './pages/TransactionHistory';
+import InternalTransfer from './pages/auth/InternalTransfer';
+import KlikCodePage from './pages/KlikCodePage';
+import AddJunior from './pages/junior/AddJunior.tsx'
+import CardsPage from './pages/cards/CardsPage.tsx'
+import PendingApprovals from './pages/junior/PendingApprovals.tsx'
+import ManageJunior from './pages/junior/ManageJunior.tsx'
+
 
 function App() {
   return (
@@ -38,7 +43,31 @@ function App() {
           <ProtectedRoute>
             <KlikCodePage />
           </ProtectedRoute>
-        }/>
+        } />
+
+        <Route path={ROUTES.ADD_JUNIOR} element={
+          <ProtectedRoute>
+            <AddJunior />
+          </ProtectedRoute>
+        } />
+
+        <Route path={ROUTES.CARDS} element={
+          <ProtectedRoute>
+            <CardsPage />
+          </ProtectedRoute>
+        } />
+
+        <Route path={ROUTES.JUNIOR_APPROVALS} element={
+          <ProtectedRoute>
+            <PendingApprovals />
+          </ProtectedRoute>
+        } />
+
+        <Route path={ROUTES.MANAGE_JUNIOR} element={
+          <ProtectedRoute>
+            <ManageJunior />
+          </ProtectedRoute>
+        } />
       </Routes>
     </AuthProvider>
   )

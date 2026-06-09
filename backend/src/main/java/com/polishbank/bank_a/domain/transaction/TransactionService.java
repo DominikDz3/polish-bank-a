@@ -6,14 +6,17 @@ import com.polishbank.bank_a.domain.transaction.dto.TransactionResponse;
 import com.polishbank.bank_a.domain.user.User;
 import com.polishbank.bank_a.domain.user.UserRepository;
 import com.polishbank.bank_a.entity.Account;
+import com.polishbank.bank_a.entity.PendingApproval;
 import com.polishbank.bank_a.entity.Transaction;
 import com.polishbank.bank_a.repository.AccountRepository;
+import com.polishbank.bank_a.repository.PendingApprovalRepository;
 import com.polishbank.bank_a.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -22,13 +25,16 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TransactionService {
 
+    private static final ZoneId ZONE = ZoneId.of("Europe/Warsaw");
+
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
+    private final PendingApprovalRepository pendingApprovalRepository;
     private final PinService pinService;
 
     @Transactional
-    public void processInternalTransfer(InternalTransferRequest request, String customerNumber) {
+    public String processInternalTransfer(InternalTransferRequest request, String customerNumber) {
         Account senderAccount = accountRepository.findById(request.senderAccountId())
                 .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono konta nadawcy."));
 
@@ -49,8 +55,7 @@ public class TransactionService {
             throw new IllegalStateException("Niewystarczające środki na koncie.");
         }
 
-        senderAccount.setBalance(senderAccount.getBalance().subtract(request.amount()));
-        receiverAccount.setBalance(receiverAccount.getBalance().add(request.amount()));
+        boolean juniorTransfer = "JUNIOR".equals(senderAccount.getType());
 
         Transaction transaction = Transaction.builder()
                 .senderAccount(senderAccount)
@@ -60,12 +65,39 @@ public class TransactionService {
                 .amount(request.amount())
                 .currency(senderAccount.getCurrency())
                 .title(request.title())
-                .status("COMPLETED")
                 .type("INTERNAL")
-                .executionDate(LocalDateTime.now())
                 .build();
 
+        if (juniorTransfer) {
+            Account parentAccount = senderAccount.getParentAccount();
+            if (parentAccount == null) {
+                throw new IllegalStateException("Konto Junior musi być podpięte do konta rodzica.");
+            }
+
+            transaction.setStatus("PENDING_APPROVAL");
+            transactionRepository.save(transaction);
+
+            PendingApproval pa = PendingApproval.builder()
+                    .juniorAccount(senderAccount)
+                    .parentUser(parentAccount.getUser())
+                    .transaction(transaction)
+                    .amount(request.amount())
+                    .description("Przelew: " + request.title())
+                    .status("PENDING")
+                    .build();
+            pendingApprovalRepository.save(pa);
+
+            return "PENDING_APPROVAL";
+        }
+
+        senderAccount.setBalance(senderAccount.getBalance().subtract(request.amount()));
+        receiverAccount.setBalance(receiverAccount.getBalance().add(request.amount()));
+
+        transaction.setStatus("COMPLETED");
+        transaction.setExecutionDate(LocalDateTime.now(ZONE));
         transactionRepository.save(transaction);
+
+        return "COMPLETED";
     }
 
     public List<TransactionResponse> getHistory(UUID accountId, String userEmail) {
