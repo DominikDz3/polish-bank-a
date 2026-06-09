@@ -6,6 +6,7 @@ interface AuthUser { email: string; role: string; customerNumber: string; pinSet
 
 interface AuthContextType {
   user: AuthUser | null;
+  loading: boolean;
   login: (customerNumber: string, password: string) => Promise<void>;
   register: (firstName: string, lastName: string, email: string, password: string) => Promise<string>;
   setPin: (pin: string, confirmPin: string) => Promise<void>;
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -35,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem('pinSet');
       }
     }
+    setLoading(false);
   }, []);
 
   const login = async (customerNumber: string, password: string) => {
@@ -60,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, setPin, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, loading, login, register, setPin, logout, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   );
