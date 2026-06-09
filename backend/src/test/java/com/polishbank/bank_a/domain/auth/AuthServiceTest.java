@@ -6,6 +6,7 @@ import com.polishbank.bank_a.domain.auth.dto.RegisterRequest;
 import com.polishbank.bank_a.domain.user.User;
 import com.polishbank.bank_a.domain.user.UserRepository;
 import com.polishbank.bank_a.domain.user.UserRole;
+import com.polishbank.bank_a.repository.AccountRepository;
 import com.polishbank.bank_a.security.JwtUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,7 @@ class AuthServiceTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private JwtUtil jwtUtil;
     @Mock private AuthenticationManager authenticationManager;
+    @Mock private AccountRepository accountRepository;
 
     @InjectMocks private AuthService authService;
 
