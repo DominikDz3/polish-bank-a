@@ -36,4 +36,34 @@ public class KlikC2BClient {
                 .retrieve()
                 .body(KlikGenerateCodeResponse.class);
     }
+
+    public void confirmPayment(java.util.UUID klikTransactionId) {
+        String body = String.format(
+            "{\"transaction_id\":\"%s\",\"status\":\"ACCEPTED\",\"authorization_timestamp\":\"%s\"}",
+            klikTransactionId,
+            java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString()
+        );
+        restClient.post()
+            .uri("/payments/confirm")
+            .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
+            .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+            .body(body)
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    public void rejectPayment(java.util.UUID klikTransactionId, String rejectReason) {
+        String body = String.format(
+            "{\"transaction_id\":\"%s\",\"status\":\"REJECTED\",\"reason\":\"%s\"}",
+            klikTransactionId,
+            rejectReason
+        );
+        restClient.post()
+            .uri("/payments/confirm")
+            .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
+            .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+            .body(body)
+            .retrieve()
+            .toBodilessEntity();
+    }
 }

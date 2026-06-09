@@ -10,4 +10,5 @@ import java.util.UUID;
 public interface KlikCodeRepository extends JpaRepository<KlikCode, UUID> {
     List<KlikCode> findByUser_IdAndStatus(UUID userId, String status);
     Optional<KlikCode> findByCode(String code);
+    List<KlikCode> findByStatusOrderByCreatedAtDesc(String status);
 }

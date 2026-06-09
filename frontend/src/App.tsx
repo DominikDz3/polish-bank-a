@@ -1,11 +1,11 @@
-import { Routes, Route} from 'react-router-dom'
+import { Routes, Route } from 'react-router-dom'
 import { ROUTES } from './constants/routes.tsx'
 import { AuthProvider } from './contexts/AuthContext.tsx'
 import { ProtectedRoute } from './components/layout/ProtectedRoute.tsx'
+import KlikAuthorizationWatcher from './components/KlikAuthorizationWatcher'
 import Home from './pages/Home.tsx'
 import Login from './pages/auth/Login.tsx'
 import Register from './pages/auth/Register.tsx'
-import SetupPin from './pages/auth/SetupPin.tsx'
 import Dashboard from './pages/Dashboard.tsx'
 import TransactionHistory from './pages/TransactionHistory';
 import InternalTransfer from './pages/auth/InternalTransfer';
@@ -17,38 +17,28 @@ import ManageJunior from './pages/junior/ManageJunior.tsx'
 
 
 function App() {
-
   return (
     <AuthProvider>
+      <KlikAuthorizationWatcher />
       <Routes>
         <Route path={ROUTES.HOME} element={<Home/>}/>
         <Route path={ROUTES.LOGIN} element={<Login/>}/>
         <Route path={ROUTES.REGISTER} element={<Register/>}/>
-
-        <Route path={ROUTES.SETUP_PIN} element={
-          <ProtectedRoute>
-            <SetupPin/>
-          </ProtectedRoute>
-        } />
-
-        <Route path={ROUTES.DASHBOARD} element = {
+        <Route path={ROUTES.DASHBOARD} element={
           <ProtectedRoute>
             <Dashboard/>
-        </ProtectedRoute>
-        } />
-
+          </ProtectedRoute>
+        }/>
         <Route path={ROUTES.INTERNAL_TRANSFER} element={
           <ProtectedRoute>
             <InternalTransfer />
           </ProtectedRoute>
-        } />
-
+        }/>
         <Route path={ROUTES.TRANSACTION_HISTORY} element={
           <ProtectedRoute>
             <TransactionHistory />
           </ProtectedRoute>
-        } />
-
+        }/>
         <Route path={ROUTES.KLIK_CODE} element={
           <ProtectedRoute>
             <KlikCodePage />
@@ -78,7 +68,6 @@ function App() {
             <ManageJunior />
           </ProtectedRoute>
         } />
-        
       </Routes>
     </AuthProvider>
   )
