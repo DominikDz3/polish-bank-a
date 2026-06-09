@@ -24,7 +24,6 @@ import java.util.Random;
 public class AuthService {
 
     private static final String BANK_CODE = "88880000";
-    // "PL" zakodowane numerycznie wg ISO 13616: P=25, L=21
     private static final String COUNTRY_CODE_NUMERIC = "2521";
 
     private final UserRepository userRepository;
@@ -57,7 +56,7 @@ public class AuthService {
                 .build();
         accountRepository.save(account);
 
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
+        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name(), user.getCustomerNumber());
         return new AuthResponse(token, user.getEmail(), user.getRole().name(),
                 user.getCustomerNumber(), user.getPinHash() != null);
     }
@@ -68,7 +67,7 @@ public class AuthService {
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(user.getEmail(), request.password())
         );
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
+        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name(), user.getCustomerNumber());
         return new AuthResponse(token, user.getEmail(), user.getRole().name(),
                 user.getCustomerNumber(), user.getPinHash() != null);
     }
@@ -96,8 +95,6 @@ public class AuthService {
         return iban;
     }
 
-    // Algorytm mod 97 (ISO 13616): BBAN + "PL" (jako 2521) + "00" -> mod 97
-    // cyfry kontrolne = 98 - mod
     private String computeIbanCheckDigits(String bban) {
         String rearranged = bban + COUNTRY_CODE_NUMERIC + "00";
         int mod = new BigInteger(rearranged).mod(BigInteger.valueOf(97)).intValue();

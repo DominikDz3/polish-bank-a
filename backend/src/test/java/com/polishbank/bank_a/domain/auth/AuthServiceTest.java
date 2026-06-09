@@ -6,7 +6,6 @@ import com.polishbank.bank_a.domain.auth.dto.RegisterRequest;
 import com.polishbank.bank_a.domain.user.User;
 import com.polishbank.bank_a.domain.user.UserRepository;
 import com.polishbank.bank_a.domain.user.UserRole;
-import com.polishbank.bank_a.repository.AccountRepository;
 import com.polishbank.bank_a.security.JwtUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,7 +28,6 @@ class AuthServiceTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private JwtUtil jwtUtil;
     @Mock private AuthenticationManager authenticationManager;
-    @Mock private AccountRepository accountRepository;
 
     @InjectMocks private AuthService authService;
 
@@ -41,7 +39,7 @@ class AuthServiceTest {
         when(userRepository.existsByCustomerNumber(anyString())).thenReturn(false);
         when(passwordEncoder.encode("password123")).thenReturn("$2a$hashed");
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(jwtUtil.generateToken("jan@test.pl", "CUSTOMER")).thenReturn("jwt-token");
+        when(jwtUtil.generateToken(eq("jan@test.pl"), eq("CUSTOMER"), anyString())).thenReturn("jwt-token");
 
         AuthResponse response = authService.register(request);
 
@@ -65,15 +63,16 @@ class AuthServiceTest {
 
     @Test
     void login_success_returnsToken() {
-        LoginRequest request = new LoginRequest("jan@test.pl", "password123");
+        LoginRequest request = new LoginRequest("12345678", "password123");
         User user = User.builder()
+                .customerNumber("12345678")
                 .email("jan@test.pl")
                 .passwordHash("$2a$hashed")
                 .role(UserRole.CUSTOMER)
                 .build();
 
-        when(userRepository.findByEmail("jan@test.pl")).thenReturn(Optional.of(user));
-        when(jwtUtil.generateToken("jan@test.pl", "CUSTOMER")).thenReturn("jwt-token");
+        when(userRepository.findByCustomerNumber("12345678")).thenReturn(Optional.of(user));
+        when(jwtUtil.generateToken(eq("jan@test.pl"), eq("CUSTOMER"), eq("12345678"))).thenReturn("jwt-token");
 
         AuthResponse response = authService.login(request);
 
