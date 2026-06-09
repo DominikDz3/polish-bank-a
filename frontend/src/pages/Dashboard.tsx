@@ -239,7 +239,7 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                  <section className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
                     <button
                       onClick={() => navigate('/cards')}
                       className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col items-center justify-center gap-3 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all group">
@@ -251,25 +251,17 @@ export default function Dashboard() {
                     <button
                       onClick={() => navigate('/klik/code')}
                       className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col items-center justify-center gap-3 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all group">
-                      <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-blue-400 group-hover:bg-blue-500/10 transition-colors font-bold text-sm">BLIK</div>
-                      <span className="text-sm font-medium text-zinc-300">Kod BLIK</span>
+                      <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-blue-400 group-hover:bg-blue-500/10 transition-colors font-bold text-sm">KLIK</div>
+                      <span className="text-sm font-medium text-zinc-300">Kod KLIK</span>
                     </button>
 
                     {!isJunior && (
-                      <>
-                        <button className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col items-center justify-center gap-3 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all group">
-                          <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-blue-400 group-hover:bg-blue-500/10 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z" /></svg>
-                          </div>
-                          <span className="text-sm font-medium text-zinc-300">Inne banki</span>
-                        </button>
-                        <button className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col items-center justify-center gap-3 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all group">
-                          <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-blue-400 group-hover:bg-blue-500/10 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                          </div>
-                          <span className="text-sm font-medium text-zinc-300">Wiadomości</span>
-                        </button>
-                      </>
+                      <button className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col items-center justify-center gap-3 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all group">
+                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-blue-400 group-hover:bg-blue-500/10 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z" /></svg>
+                        </div>
+                        <span className="text-sm font-medium text-zinc-300">Inne banki</span>
+                      </button>
                     )}
                   </section>
                 </div>
@@ -378,7 +370,7 @@ export default function Dashboard() {
                       </div>
                       <div className="text-left">
                         <p className="text-sm font-medium text-zinc-200">Przelew na telefon</p>
-                        <p className="text-xs text-zinc-500">Natychmiastowy BLIK</p>
+                        <p className="text-xs text-zinc-500">Natychmiastowy KLIK</p>
                       </div>
                     </div>
                   </button>
