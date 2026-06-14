@@ -34,4 +34,16 @@ public class Card {
 
     private String type;
     private boolean isBlocked;
+
+    @Column(name = "provider_token", unique = true)
+    private String providerToken;
+
+    @Column(name = "provider_status")
+    private String providerStatus;
+
+    @Column(name = "masked_pan")
+    private String maskedPan;
+
+    @Column(name = "bin_prefix")
+    private String binPrefix;
 }

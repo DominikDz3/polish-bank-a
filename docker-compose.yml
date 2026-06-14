@@ -31,12 +31,18 @@ services:
       KLIK_BASE_URL: ${KLIK_BASE_URL}
       KLIK_API_KEY: ${KLIK_API_KEY}
       KLIK_ZONE: ${KLIK_ZONE}
+      CARDS_GATEWAY_URL: ${CARDS_GATEWAY_URL}
+      CARDS_PROVIDER_API_KEY: ${CARDS_PROVIDER_API_KEY}
+      CARDS_PROVIDER_HMAC_SECRET: ${CARDS_PROVIDER_HMAC_SECRET}
+      CARDS_PROVIDER_BIN: ${CARDS_PROVIDER_BIN}
+      CARDS_PROVIDER_ADMIN_KEY: ${CARDS_PROVIDER_ADMIN_KEY}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - postgres
     networks:
       - bank_network
+      - cards-backend
     restart: unless-stopped
 
   frontend:
@@ -61,3 +67,5 @@ volumes:
 networks:
   bank_network:
     driver: bridge
+  cards-backend:
+    external: true
