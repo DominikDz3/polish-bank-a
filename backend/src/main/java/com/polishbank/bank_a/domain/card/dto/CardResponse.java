@@ -15,5 +15,8 @@ public record CardResponse(
     String currency,
     LocalDate expiryDate,
     String type,
-    boolean blocked
+    boolean blocked,
+    String providerToken,
+    String providerStatus,
+    String maskedPan
 ) {}
