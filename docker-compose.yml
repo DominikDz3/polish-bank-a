@@ -22,8 +22,9 @@ services:
       dockerfile: Dockerfile
     container_name: bank_a_backend
     ports:
-      - "8080:8080"
+      - "8080:8000"
     environment:
+      SERVER_PORT: 8000
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bank_a
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
@@ -41,8 +42,10 @@ services:
     depends_on:
       - postgres
     networks:
-      - bank_network
-      - cards-backend
+      bank_network:
+      cards-backend:
+        aliases:
+          - polish-bank-a
     restart: unless-stopped
 
   frontend:

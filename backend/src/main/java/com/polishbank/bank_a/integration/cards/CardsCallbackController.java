@@ -20,17 +20,17 @@ public class CardsCallbackController {
 
     private final CardsCallbackService cardsCallbackService;
 
-    @PostMapping("/authorize")
+    @PostMapping({"/authorize", "/api/webhooks/cards/authorize"})
     public ResponseEntity<AuthorizeWebhookResponse> authorize(@RequestBody AuthorizeWebhookRequest request) {
         return ResponseEntity.ok(cardsCallbackService.authorize(request));
     }
 
-    @PostMapping("/capture")
+    @PostMapping({"/capture", "/api/webhooks/cards/capture"})
     public ResponseEntity<CaptureWebhookResponse> capture(@RequestBody CaptureWebhookRequest request) {
         return ResponseEntity.ok(cardsCallbackService.capture(request));
     }
 
-    @PostMapping("/refund")
+    @PostMapping({"/refund", "/api/webhooks/cards/refund"})
     public ResponseEntity<RefundWebhookResponse> refund(@RequestBody RefundWebhookRequest request) {
         return ResponseEntity.ok(cardsCallbackService.refund(request));
     }
