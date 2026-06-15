@@ -113,7 +113,7 @@ public class DataSeeder implements CommandLineRunner {
                 .accountNumber("PL55888800006666222298761234").balance(new BigDecimal("0.00"))
                 .blockedFunds(BigDecimal.ZERO).currency("PLN").type("STANDARD").build());
 
-                
+        /*        
         // 3. KARTY PŁATNICZE
         LocalDate cardExpiry = LocalDate.now().plusYears(3);
         cardRepository.saveAll(List.of(
@@ -132,6 +132,7 @@ public class DataSeeder implements CommandLineRunner {
                 Card.builder().account(accMichal).cardNumber("5411223344556677")
                         .transactionLimit(new BigDecimal("15000.00")).currency("PLN").expiryDate(cardExpiry)
                         .type("CREDIT").isBlocked(false).build()));
+        */            
 
                         
         // 4. TRANSAKCJE
