@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CreditCard, AlertCircle, CheckCircle2, Plus, Lock, Unlock, Power, Copy, X } from 'lucide-react';
+import { CreditCard, AlertCircle, CheckCircle2, Plus, Lock, Unlock, Power, Copy, X, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cardService } from '../../services/cardService';
 import type { CardSummary, OrderCardResponse } from '../../services/cardService';
@@ -158,6 +158,22 @@ const CardsPage: React.FC = () => {
     }
   };
 
+  const handleDelete = async (cardId: string) => {
+    if (!window.confirm('Czy na pewno chcesz trwale usunąć tę kartę? Karta zostanie zastrzeżona i odpięta od rachunku.')) {
+      return;
+    }
+    setError(null); setSuccess(null); setActionLoading(`delete-${cardId}`);
+    try {
+      const res = await cardService.delete(cardId);
+      setSuccess(res.message);
+      await load();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || err.response?.data?.message || 'Nie udało się usunąć karty.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const fmt = (v: number | null, c: string) =>
     v == null ? '—' : new Intl.NumberFormat('pl-PL', { style: 'currency', currency: c }).format(v);
 
@@ -255,10 +271,7 @@ const CardsPage: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {!card.providerToken && (
-                    <span className="text-xs text-zinc-500 italic">Karta lokalna — nie zarejestrowana u providera</span>
-                  )}
-                  {card.providerToken && status !== 'ACTIVE' && status !== 'BLOCKED' && (
+                  {status !== 'ACTIVE' && status !== 'BLOCKED' && (
                     <button
                       onClick={() => handleForceActivate(card.id)}
                       disabled={actionLoading === `force-${card.id}`}
@@ -274,7 +287,7 @@ const CardsPage: React.FC = () => {
                       <Power size={13} /> Aktywuj
                     </button>
                   )}
-                  {card.providerToken && status === 'ACTIVE' && !isBlocked && (
+                  {status === 'ACTIVE' && !isBlocked && (
                     <button
                       onClick={() => handleBlock(card.id)}
                       disabled={actionLoading === `block-${card.id}`}
@@ -282,7 +295,7 @@ const CardsPage: React.FC = () => {
                       <Lock size={13} /> Zablokuj
                     </button>
                   )}
-                  {card.providerToken && isBlocked && (
+                  {isBlocked && (
                     <button
                       onClick={() => handleUnblock(card.id)}
                       disabled={actionLoading === `unblock-${card.id}`}
@@ -290,12 +303,12 @@ const CardsPage: React.FC = () => {
                       <Unlock size={13} /> Odblokuj
                     </button>
                   )}
-                  {card.providerToken && (status === 'REQUESTED' || status === 'PRODUCING') && card.type === 'VIRTUAL' && (
-                    <span className="text-xs text-zinc-500 italic">Karta wirtualna aktywuje się automatycznie (do 1h)</span>
-                  )}
-                  {card.providerToken && (status === 'REQUESTED' || status === 'PRODUCING') && card.type !== 'VIRTUAL' && (
-                    <span className="text-xs text-zinc-500 italic">Karta w produkcji — czekaj na wysyłkę</span>
-                  )}
+                  <button
+                    onClick={() => handleDelete(card.id)}
+                    disabled={actionLoading === `delete-${card.id}`}
+                    className="bg-zinc-800 hover:bg-red-600/20 hover:border-red-500/30 hover:text-red-400 border border-zinc-700 text-zinc-400 text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-50 ml-auto">
+                    <Trash2 size={13} /> Usuń
+                  </button>
                 </div>
               </div>
             );

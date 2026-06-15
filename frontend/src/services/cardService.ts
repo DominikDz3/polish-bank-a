@@ -63,4 +63,6 @@ export const cardService = {
     api.post<{ message: string }>(`/api/cards/${cardId}/dev/force-activate`, {}).then(r => r.data),
   topup: (cardId: string, amount: number) =>
     api.post<{ message: string; newCardBalance: number }>(`/api/cards/${cardId}/topup`, { amount }).then(r => r.data),
+  delete: (cardId: string) =>
+    api.delete<{ message: string }>(`/api/cards/${cardId}`).then(r => r.data),
 };

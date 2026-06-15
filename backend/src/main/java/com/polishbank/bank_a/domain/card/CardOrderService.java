@@ -6,6 +6,7 @@ import com.polishbank.bank_a.domain.user.UserRepository;
 import com.polishbank.bank_a.entity.Account;
 import com.polishbank.bank_a.entity.Card;
 import com.polishbank.bank_a.integration.cards.CardsProviderClient;
+import com.polishbank.bank_a.integration.cards.CardsProviderException;
 import com.polishbank.bank_a.integration.cards.CardsProviderProperties;
 import com.polishbank.bank_a.integration.cards.dto.ActivateCardRequest;
 import com.polishbank.bank_a.integration.cards.dto.ChangeStatusRequest;
@@ -18,7 +19,11 @@ import com.polishbank.bank_a.repository.CardRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.polishbank.bank_a.entity.Transaction;
+import com.polishbank.bank_a.repository.TransactionRepository;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -32,9 +37,12 @@ public class CardOrderService {
     private static final Set<String> ALLOWED_USER_TYPES = Set.of("VIRTUAL", "PHYSICAL");
     private static final Set<String> ALLOWED_JUNIOR_TYPES = Set.of("PREPAID");
 
+    private static final ZoneId ZONE = ZoneId.of("Europe/Warsaw");
+
     private final UserRepository userRepository;
     private final AccountRepository accountRepository;
     private final CardRepository cardRepository;
+    private final TransactionRepository transactionRepository;
     private final CardsProviderClient cardsProviderClient;
     private final CardsProviderProperties cardsProviderProperties;
 
@@ -54,7 +62,7 @@ public class CardOrderService {
                 0.0
         ));
 
-        Card card = persistIssuedCard(account, issued, cardType, null);
+        Card card = persistIssuedCard(account, issued, cardType);
         return toResponse(card, issued);
     }
 
@@ -83,13 +91,13 @@ public class CardOrderService {
                 0.0
         ));
 
-        Card card = persistIssuedCard(juniorAccount, issued, cardType, BigDecimal.valueOf(200));
+        Card card = persistIssuedCard(juniorAccount, issued, cardType);
         return toResponse(card, issued);
     }
 
     @Transactional
     public void blockCard(UUID cardId, String userEmail) {
-        Card card = loadCardOwnedBy(cardId, userEmail);
+        Card card = loadCardOwnedOrManagedBy(cardId, userEmail);
         cardsProviderClient.changeStatus(card.getProviderToken(),
                 new ChangeStatusRequest("BLOCKED", "Zablokowana przez klienta"));
         card.setBlocked(true);
@@ -99,7 +107,7 @@ public class CardOrderService {
 
     @Transactional
     public void unblockCard(UUID cardId, String userEmail) {
-        Card card = loadCardOwnedBy(cardId, userEmail);
+        Card card = loadCardOwnedOrManagedBy(cardId, userEmail);
         cardsProviderClient.changeStatus(card.getProviderToken(),
                 new ChangeStatusRequest("ACTIVE", "Odblokowana przez klienta"));
         card.setBlocked(false);
@@ -109,7 +117,7 @@ public class CardOrderService {
 
     @Transactional
     public void activateCard(UUID cardId, String userEmail) {
-        Card card = loadCardOwnedBy(cardId, userEmail);
+        Card card = loadCardOwnedOrManagedBy(cardId, userEmail);
         cardsProviderClient.activateCard(card.getProviderToken(), new ActivateCardRequest("customer"));
         card.setProviderStatus("ACTIVE");
         cardRepository.save(card);
@@ -126,16 +134,40 @@ public class CardOrderService {
         }
 
         Account fundingAccount = findFundingAccountForTopup(card, userEmail);
+        Account cardAccount = card.getAccount();
         if (fundingAccount.getBalance().compareTo(amount) < 0) {
             throw new IllegalStateException("Brak wystarczających środków na koncie do doładowania.");
         }
 
         TopupCardResponse resp = cardsProviderClient.topupCard(
                 card.getProviderToken(),
-                new TopupCardRequest(amount.doubleValue(), card.getCurrency()));
+                new TopupCardRequest(amount.doubleValue(), card.getCurrency())
+        );
 
         fundingAccount.setBalance(fundingAccount.getBalance().subtract(amount));
         accountRepository.save(fundingAccount);
+
+        if (!fundingAccount.getId().equals(cardAccount.getId())) {
+            cardAccount.setBalance(cardAccount.getBalance().add(amount));
+            accountRepository.save(cardAccount);
+        }
+
+        String juniorName = cardAccount.getUser().getFirstName() + " " + cardAccount.getUser().getLastName();
+        Transaction tx = Transaction.builder()
+                .senderAccount(fundingAccount)
+                .senderAccountNumber(fundingAccount.getAccountNumber())
+                .receiverAccount(cardAccount)
+                .receiverAccountNumber(cardAccount.getAccountNumber())
+                .receiverName(juniorName)
+                .title("Doładowanie karty PREPAID")
+                .amount(amount)
+                .currency(fundingAccount.getCurrency())
+                .type("CARD_TOPUP")
+                .status("COMPLETED")
+                .card(card)
+                .executionDate(LocalDateTime.now(ZONE))
+                .build();
+        transactionRepository.save(tx);
 
         return resp != null && resp.newBalance() != null
                 ? BigDecimal.valueOf(resp.newBalance())
@@ -144,7 +176,7 @@ public class CardOrderService {
     
     @Transactional
     public void devForceActivate(UUID cardId, String userEmail) {
-        Card card = loadCardOwnedBy(cardId, userEmail);
+        Card card = loadCardOwnedOrManagedBy(cardId, userEmail);
 
         var remote = cardsProviderClient.getStatus(card.getProviderToken());
         String status = remote.status();
@@ -182,14 +214,38 @@ public class CardOrderService {
         cardRepository.save(card);
     }
 
-    private Card persistIssuedCard(Account account, IssueCardResponse issued, String cardType,
-                                   BigDecimal defaultLimit) {
+    @Transactional
+    public void deleteCard(UUID cardId, String userEmail) {
+        Card card = loadCardOwnedOrManagedBy(cardId, userEmail);
+        try {
+            cardsProviderClient.changeStatus(card.getProviderToken(),
+                    new com.polishbank.bank_a.integration.cards.dto.ChangeStatusRequest(
+                            "BLOCKED", "Trwałe usunięcie (Bank)"));
+        } catch (CardsProviderException ignored) {
+            // Karta mogła już być BLOCKED u providera — nie blokuj usuwania lokalnie
+        }
+        cardRepository.delete(card);
+    }
+
+    private Card persistIssuedCard(Account account, IssueCardResponse issued, String cardType) {
         LocalDate expiry = null;
         if (issued.expiryMonth() != null && issued.expiryYear() != null) {
             int year = issued.expiryYear() < 100 ? 2000 + issued.expiryYear() : issued.expiryYear();
-            expiry = LocalDate.of(year, issued.expiryMonth(), 1).withDayOfMonth(
-                    LocalDate.of(year, issued.expiryMonth(), 1).lengthOfMonth());
+            LocalDate firstOfMonth = LocalDate.of(year, issued.expiryMonth(), 1);
+            expiry = firstOfMonth.withDayOfMonth(firstOfMonth.lengthOfMonth());
         }
+        BigDecimal txLimit = switch (cardType) {
+            case "VIRTUAL" -> new BigDecimal("500.00");
+            case "PHYSICAL" -> new BigDecimal("5000.00");
+            case "PREPAID" -> new BigDecimal("200.00");
+            default -> null;
+        };
+        BigDecimal dailyLimit = switch (cardType) {
+            case "VIRTUAL" -> new BigDecimal("2000.00");
+            case "PHYSICAL" -> new BigDecimal("20000.00");
+            case "PREPAID" -> new BigDecimal("500.00");
+            default -> null;
+        };
         Card card = Card.builder()
                 .account(account)
                 .cardNumber(issued.maskedPan())
@@ -200,7 +256,8 @@ public class CardOrderService {
                 .currency(account.getCurrency() != null ? account.getCurrency() : "PLN")
                 .type(cardType)
                 .expiryDate(expiry)
-                .transactionLimit(defaultLimit)
+                .transactionLimit(txLimit)
+                .dailyLimit(dailyLimit)
                 .isBlocked(false)
                 .build();
         return cardRepository.save(card);

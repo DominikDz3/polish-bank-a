@@ -96,11 +96,16 @@ public class CardController {
     @PostMapping("/{cardId}/topup")
     public ResponseEntity<?> topup(@PathVariable UUID cardId,
                                    @Valid @RequestBody TopupCardRequest request,
-                                   Authentication authentication) {
+            Authentication authentication) {
         BigDecimal newBalance = cardOrderService.topupCard(cardId, authentication.getName(), request.amount());
         return ResponseEntity.ok(Map.of(
                 "message", "Karta została doładowana.",
-                "newCardBalance", newBalance != null ? newBalance : ""
-        ));
+                "newCardBalance", newBalance != null ? newBalance : ""));
+    }
+    
+    @DeleteMapping("/{cardId}")
+    public ResponseEntity<?> deleteCard(@PathVariable UUID cardId, Authentication authentication) {
+        cardOrderService.deleteCard(cardId, authentication.getName());
+        return ResponseEntity.ok(Map.of("message", "Karta została usunięta."));
     }
 }
