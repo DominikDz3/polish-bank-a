@@ -37,6 +37,7 @@ public class CardsCallbackService {
     private final CardAuthorizationRepository cardAuthorizationRepository;
     private final TransactionRepository transactionRepository;
     private final CardLimitService cardLimitService;
+    private final CardTransactionAuditService cardTransactionAuditService;
 
     @Transactional
     public AuthorizeWebhookResponse authorize(AuthorizeWebhookRequest req) {
@@ -134,12 +135,12 @@ public class CardsCallbackService {
             ca = cardAuthorizationRepository.findByExternalTransactionId(req.transactionId()).orElse(null);
         }
 
-        // Idempotencja
         if (ca != null && "SETTLED".equals(ca.getStatus())) {
             return new CaptureWebhookResponse("SETTLED");
         }
 
         if (ca != null) {
+            validateCardLimits(ca.getCard(), ca.getAmount(), ca.getExternalTransactionId(), ca.getMerchantName());
             Account account = ca.getAccount();
             BigDecimal amount = ca.getAmount();
             account.setBalance(account.getBalance().subtract(amount));
@@ -156,20 +157,43 @@ public class CardsCallbackService {
             return new CaptureWebhookResponse("SETTLED");
         }
 
-        // Fallback gdy nie było /authorize: direct charge po card_token + amount
         if (req.cardToken() == null || req.amount() == null) {
             throw new IllegalArgumentException("Brak danych do rozliczenia (authorization_code/transaction_id albo card_token+amount).");
         }
         Card card = cardRepository.findByProviderToken(req.cardToken())
                 .orElseThrow(() -> new IllegalArgumentException("Karta nie znaleziona dla podanego card_token."));
+
+        validateCardLimits(card, req.amount(), req.transactionId(), req.merchantLabel());
+
         Account account = card.getAccount();
         account.setBalance(account.getBalance().subtract(req.amount()));
         accountRepository.save(account);
-                saveCardTransaction(card, account, req.amount(), "CARD_PAYMENT",
+        saveCardTransaction(card, account, req.amount(), "CARD_PAYMENT",
                 req.transactionId(), req.merchantLabel());
 
         return new CaptureWebhookResponse("SETTLED");
     }
+
+    private void validateCardLimits(Card card, BigDecimal amount, String externalTxId, String merchant) {
+        if (card == null) return;
+        String reason = null;
+        if (card.isBlocked()) {
+            reason = "Karta jest zablokowana";
+        } else if (card.getTransactionLimit() != null
+                && amount.compareTo(card.getTransactionLimit()) > 0) {
+            reason = "Limit transakcji karty (" + card.getTransactionLimit() + " " + card.getCurrency() + ") przekroczony";
+        } else if (card.getDailyLimit() != null) {
+            BigDecimal spentToday = cardLimitService.sumSpentToday(card.getId());
+            if (spentToday.add(amount).compareTo(card.getDailyLimit()) > 0) {
+                reason = "Limit dzienny karty przekroczony (wydano dziś " + spentToday + ", limit " + card.getDailyLimit() + ")";
+            }
+        }
+        if (reason != null) {
+            cardTransactionAuditService.saveRejectedCardPayment(card, amount, externalTxId, merchant, reason);
+            throw new IllegalStateException(reason);
+        }
+    }
+    
 
     @Transactional
     public RefundWebhookResponse refund(RefundWebhookRequest req) {
