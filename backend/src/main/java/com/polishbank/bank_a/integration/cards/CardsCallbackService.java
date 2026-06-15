@@ -227,12 +227,15 @@ public class CardsCallbackService {
 
     private void saveCardTransaction(Card card, Account account, BigDecimal amount,
                                      String type, String externalId, String merchant) {
+        String cardLabel = (card != null && card.getMaskedPan() != null && card.getMaskedPan().length() >= 4)
+                ? " (•••• " + card.getMaskedPan().substring(card.getMaskedPan().length() - 4) + ")"
+                : "";
         Transaction tx = Transaction.builder()
                 .senderAccount(account)
                 .senderAccountNumber(account.getAccountNumber())
                 .card(card)
                 .receiverName(merchant)
-                .title("Płatność kartą" + (merchant != null ? ": " + merchant : ""))
+                .title("Płatność kartą" + (merchant != null ? ": " + merchant : "") + cardLabel)
                 .amount(amount)
                 .currency(account.getCurrency())
                 .type(type)

@@ -23,12 +23,15 @@ public class CardTransactionAuditService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void saveRejectedCardPayment(Card card, BigDecimal amount, String externalTxId,
                                         String merchant, String reason) {
+        String cardLabel = (card.getMaskedPan() != null && card.getMaskedPan().length() >= 4)
+                ? " (•••• " + card.getMaskedPan().substring(card.getMaskedPan().length() - 4) + ")"
+                : "";
         Transaction rejected = Transaction.builder()
                 .senderAccount(card.getAccount())
                 .senderAccountNumber(card.getAccount().getAccountNumber())
                 .card(card)
                 .receiverName(merchant)
-                .title("Próba płatności kartą odrzucona: " + reason)
+                .title("Próba płatności kartą" + cardLabel + " odrzucona: " + reason)
                 .amount(amount)
                 .currency(card.getCurrency())
                 .type("CARD_PAYMENT_REJECTED")

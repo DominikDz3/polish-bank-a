@@ -153,13 +153,16 @@ public class CardOrderService {
         }
 
         String juniorName = cardAccount.getUser().getFirstName() + " " + cardAccount.getUser().getLastName();
+                String cardLabel = (card.getMaskedPan() != null && card.getMaskedPan().length() >= 4)
+                ? " (•••• " + card.getMaskedPan().substring(card.getMaskedPan().length() - 4) + ")"
+                : "";
         Transaction tx = Transaction.builder()
                 .senderAccount(fundingAccount)
                 .senderAccountNumber(fundingAccount.getAccountNumber())
                 .receiverAccount(cardAccount)
                 .receiverAccountNumber(cardAccount.getAccountNumber())
                 .receiverName(juniorName)
-                .title("Doładowanie karty PREPAID")
+                .title("Doładowanie karty PREPAID" + cardLabel)
                 .amount(amount)
                 .currency(fundingAccount.getCurrency())
                 .type("CARD_TOPUP")
