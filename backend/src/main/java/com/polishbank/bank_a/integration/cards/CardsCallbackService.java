@@ -165,8 +165,8 @@ public class CardsCallbackService {
         Account account = card.getAccount();
         account.setBalance(account.getBalance().subtract(req.amount()));
         accountRepository.save(account);
-        saveCardTransaction(card, account, req.amount(), "CARD_PAYMENT",
-                req.transactionId(), req.merchantName());
+                saveCardTransaction(card, account, req.amount(), "CARD_PAYMENT",
+                req.transactionId(), req.merchantLabel());
 
         return new CaptureWebhookResponse("SETTLED");
     }
