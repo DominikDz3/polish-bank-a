@@ -80,7 +80,73 @@ System bankowy (BANK A) -> SFTP -> KIR -> SFTP -> System bankowy (BANK B)
 *TBD*
 
 ### 4.7 Karty płatnicze
-*TBD*
+
+Karta płatnicza to instrument płatniczy wydany przez bank (issuer) i obsługiwany przez zewnętrznego providera kart. Bank A jest **issuerem** — zamawia karty u providera, autoryzuje wydanie ich klientowi, prowadzi konto z którego rozliczane są transakcje. Provider zarządza cyklem życia karty, generowaniem PAN/CVV i autoryzacją płatności w sieci POS.
+
+#### 4.7.1 Architektura integracji
+
+System współpracuje z providerem [Karty-Platnicze-Aplikacje-Biznesowe](https://github.com/FilipSl3/Karty-Platnicze-Aplikacje-Biznesowe) w modelu czterostronnym (Cardholder ↔ Issuer Bank ↔ Acquirer/POS ↔ Merchant).
+
+Komunikacja dwukierunkowa:
+
+* **Bank → Provider** (REST + HMAC-SHA256): zamawianie karty, blokada/odblokowanie, aktywacja, doładowanie PREPAID, lifecycle (DEV). Każde żądanie podpisane HMAC-SHA256 z timestampem (ochrona przed replay attacks, ważne 30s).
+* **Provider → Bank** (REST, bez auth, sieć VPN/Docker internal): webhook `/capture` (rozliczenie po settlement). W rzeczywistości bank A jest osiągalny w sieci `cards-backend` pod aliasem `polish-bank-a:8000`.
+
+#### 4.7.2 Typy kart
+
+| Typ | Domyślny limit transakcji | Domyślny limit dzienny | Aktywacja | Przeznaczenie |
+|---|---|---|---|---|
+| **VIRTUAL** | 500 PLN | 2 000 PLN | Auto, do 1h | Zakupy online |
+| **PHYSICAL** | 5 000 PLN | 20 000 PLN | Po dostawie (REQUESTED → PRODUCING → SHIPPED → ACTIVE) | Karta główna |
+| **PREPAID** | 200 PLN | 500 PLN | Auto, do 1h | Konto Junior — wymaga zasilenia przez rodzica |
+
+#### 4.7.3 Lifecycle karty
+REQUESTED → PRODUCING → SHIPPED → ACTIVE ↔ BLOCKED
+↓
+USUNIĘTA (BLOCKED u providera + delete lokalnie)
+
+
+Dla VIRTUAL provider auto-aktywuje kartę po 1h. Dla PHYSICAL klient (bank) musi przeprowadzić kartę przez cykl produkcji. Endpoint **"Wymuś aktywację (DEV)"** symuluje pełen cykl jednym kliknięciem na potrzeby demonstracji.
+
+#### 4.7.4 Flow płatności kartą
+
+1. Klient w POS providera podaje PAN + CVV + expiry + kwotę.
+2. Provider lokalnie autoryzuje (sprawdza status, expiry, balance dla PREPAID).
+3. POS pokazuje **APPROVED**.
+4. Co 30s settlement batch wywołuje `POST /capture` na webhook banku.
+5. Bank waliduje **limity karty** (transakcji, dzienny, blokada).
+   * Jeśli OK → `Account.balance -= amount`, zapis `Transaction` ze statusem `COMPLETED`.
+   * Jeśli przekroczono limit → `Transaction` ze statusem `REJECTED` (audit trail), saldo niezmienione, provider dostaje HTTP 400.
+6. Klient widzi transakcję w historii (zrealizowaną lub odrzuconą z powodem).
+
+#### 4.7.5 Karta Junior (PREPAID)
+
+* Rodzic zamawia kartę PREPAID dla konta dziecka.
+* Doładowanie karty = przelew z konta rodzica → konto Juniora + topup u providera. Klient widzi w historii rodzica `-X PLN "Doładowanie karty PREPAID (•••• 5091)"` i Juniora `+X PLN`.
+* Rodzic może w panelu Junior: zamówić kartę, aktywować (DEV), doładować, ustawić limity (transakcji + dzienny), zablokować, odblokować, usunąć.
+* Junior używa karty u POS, capture obciąża jego konto.
+
+#### 4.7.6 Bezpieczeństwo
+
+* **PCI-DSS friendly**: bank lokalnie przechowuje tylko `provider_token` + `masked_pan` (np. `4100 01** **** 5091`), nigdy pełnego PAN ani CVV.
+* **Idempotencja webhooków** przez `card_authorizations.external_transaction_id UNIQUE` — wielokrotne wywołanie capture z tym samym `transaction_id` zwraca tę samą decyzję.
+* **HMAC-SHA256** podpis żądań do providera (sekret w env, weryfikacja timestamp).
+* **REJECTED audit trail** — każda transakcja odrzucona z powodu limitu jest zapisana w historii w osobnej transakcji DB (`REQUIRES_NEW`), niezależnie od rollbacku głównej transakcji webhooka.
+
+#### 4.7.7 Endpointy banku
+
+| Endpoint | Metoda | Opis |
+|---|---|---|
+| `/api/cards` | GET | Lista kart klienta |
+| `/api/cards/junior/{accountId}` | GET | Karty Juniora (dla rodzica) |
+| `/api/cards/order` | POST | Zamów VIRTUAL/PHYSICAL |
+| `/api/cards/junior/{accountId}/order` | POST | Zamów PREPAID dla Juniora |
+| `/api/cards/{id}/block` `/unblock` `/activate` | POST | Lifecycle |
+| `/api/cards/{id}/topup` | POST | Doładowanie PREPAID (rodzic→Junior) |
+| `/api/cards/{id}/limits` | PATCH | Limity transakcji/dzienny |
+| `/api/cards/{id}` | DELETE | Trwałe usunięcie (BLOCKED u providera + delete lokalnie) |
+| `/api/cards/{id}/dev/force-activate` | POST | DEV: REQUESTED → ACTIVE |
+| `/capture` (alias dla `/api/webhooks/cards/capture`) | POST | Webhook od providera — settlement |
 
 ## 5. Diagramy
 
