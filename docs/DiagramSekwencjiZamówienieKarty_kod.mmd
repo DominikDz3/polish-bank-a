@@ -1,0 +1,24 @@
+sequenceDiagram
+    actor Klient
+    participant FE as Frontend (React)
+    participant BE as Backend Bank (Spring)
+    participant Signer as HmacSigner
+    participant Provider as Cards Provider (FastAPI)
+    participant DB as PostgreSQL
+
+    Klient->>FE: Klika "Zamów kartę VIRTUAL"
+    FE->>BE: POST /api/cards/order {cardType:VIRTUAL} + JWT
+    BE->>DB: SELECT user, account
+    DB-->>BE: User + Account
+    BE->>BE: serializuj IssueCardRequest (snake_case)
+    BE->>Signer: sign(hmacSecret, body)
+    Signer-->>BE: SignedRequest {signature, timestamp, bodyJson}
+    BE->>Provider: POST /api/v1/cards/issue
+    Note over BE,Provider: Headers: X-API-Key, X-Signature, X-Timestamp
+    Provider->>Provider: weryfikacja HMAC + timestamp (<30s)
+    Provider->>Provider: generowanie PAN, CVV, token
+    Provider-->>BE: 200 {card_token, full_pan, cvv, masked_pan, expiry_*}
+    BE->>DB: INSERT INTO cards (provider_token, masked_pan, ...)
+    DB-->>BE: Card ID
+    BE-->>FE: 200 OrderCardResponse {fullPan, cvv, ...}
+    FE-->>Klient: Modal "Karta wydana" (PAN/CVV jednorazowo)

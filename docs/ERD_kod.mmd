@@ -1,17 +1,15 @@
+
 erDiagram
-    %% ==========================================
-    %% GŁÓWNE TABELE 
-    %% ==========================================
     USERS {
         UUID id PK
-        varchar customer_number "UNIQUE"
+        varchar customer_number "UNIQUE, 8 znaków"
         varchar first_name
         varchar last_name
         varchar email "UNIQUE"
         varchar password_hash
-        varchar phone_number
+        varchar phone_number "UNIQUE"
         date date_of_birth
-        varchar role
+        varchar role "ADMIN, CUSTOMER, JUNIOR"
         varchar pin_hash "BCrypt, NULL = nieustawiony"
         int pin_failed_attempts "licznik nieudanych prób"
         timestamp pin_locked_until "blokada PIN do tego czasu"
@@ -24,20 +22,38 @@ erDiagram
         decimal balance
         decimal blocked_funds
         varchar currency
-        varchar type
+        varchar type "STANDARD, JUNIOR, BANK_INTERNAL"
         UUID parent_account_id FK "Może być NULL"
     }
 
     CARDS {
         UUID id PK
         UUID account_id FK
-        varchar card_number "UNIQUE"
+        varchar card_number "deprecated, używany maskowany"
+        varchar masked_pan "4100 01** **** 5852"
+        varchar provider_token "UNIQUE, klucz integracji z providerem"
+        varchar provider_status "REQUESTED, PRODUCING, SHIPPED, ACTIVE, BLOCKED"
+        varchar bin_prefix
         decimal transaction_limit
+        decimal daily_limit "Limit dzienny (NULL = brak)"
         varchar currency
         date expiry_date
-        varchar type
+        varchar type "VIRTUAL, PHYSICAL, PREPAID"
         boolean is_blocked
-        decimal daily_limit "Limit dzienny (NULL = brak)"
+    }
+
+    CARD_AUTHORIZATIONS {
+        UUID id PK
+        varchar authorization_code "UNIQUE"
+        varchar external_transaction_id "UNIQUE, idempotencja webhooków"
+        UUID card_id FK
+        UUID account_id FK
+        decimal amount
+        varchar currency
+        varchar merchant_name
+        varchar status "HELD, SETTLED, REFUNDED, EXPIRED"
+        timestamp created_at
+        timestamp settled_at
     }
 
     TRANSACTIONS {
@@ -51,17 +67,14 @@ erDiagram
         varchar title
         decimal amount
         varchar currency
-        varchar status
-        varchar type
+        varchar status "COMPLETED, PENDING, PENDING_APPROVAL, REJECTED, HELD_FOR_AML"
+        varchar type "INTERNAL, CARD_PAYMENT, CARD_PAYMENT_REJECTED, CARD_TOPUP, KLIK"
         varchar external_payment_id
         timestamp created_at
         timestamp execution_date
-        UUID card_id FK "NULL jeśli nie płatność kartą"        
+        UUID card_id FK "NULL jeśli nie płatność kartą"
     }
 
-    %% ==========================================
-    %% TABELE ROZSZERZAJĄCE 
-    %% ==========================================
     PENDING_APPROVALS {
         UUID id PK
         UUID junior_account_id FK
@@ -78,7 +91,7 @@ erDiagram
         UUID id PK
         UUID user_id FK
         UUID account_id FK
-        varchar code
+        varchar code "6 cyfr"
         decimal amount
         varchar status "ACTIVE, USED, EXPIRED"
         timestamp created_at
@@ -91,9 +104,22 @@ erDiagram
         UUID id PK
         UUID user_id FK
         UUID account_id FK
-        varchar alias "UNIQUE"
+        varchar alias "UNIQUE, numer telefonu"
         boolean active
         timestamp created_at
+    }
+
+    KLIK_AUTHORIZATIONS {
+        UUID id PK
+        UUID user_id FK
+        UUID account_id FK
+        varchar external_id "ID od dostawcy KLIK"
+        decimal amount
+        varchar currency
+        varchar merchant
+        varchar status "PENDING, CONFIRMED, REJECTED, EXPIRED"
+        timestamp created_at
+        timestamp resolved_at
     }
 
     AML_HOLDS {
@@ -108,31 +134,27 @@ erDiagram
         timestamp released_at
     }
 
-    %% ==========================================
-    %% RELACJE
-    %% ==========================================
     USERS ||--o{ ACCOUNTS : "posiada"
     ACCOUNTS ||--o{ ACCOUNTS : "ma subkonta (Junior)"
-    
+
     ACCOUNTS ||--o{ CARDS : "jest podpięte pod"
-    
+    CARDS ||--o{ CARD_AUTHORIZATIONS : "ma autoryzacje"
+    ACCOUNTS ||--o{ CARD_AUTHORIZATIONS : "obciąża"
+
     ACCOUNTS ||--o{ TRANSACTIONS : "wysyła (sender)"
     ACCOUNTS ||--o{ TRANSACTIONS : "odbiera (receiver)"
+    CARDS ||--o{ TRANSACTIONS : "obciąża"
 
-    %% Relacje Pending Approvals
     ACCOUNTS ||--o{ PENDING_APPROVALS : "wymaga akceptacji (Junior)"
     USERS ||--o{ PENDING_APPROVALS : "akceptuje (Rodzic)"
     TRANSACTIONS ||--o| PENDING_APPROVALS : "dotyczy (opcjonalnie)"
 
-    %% Relacje BLIK (KLIK)
     USERS ||--o{ KLIK_CODES : "generuje"
     ACCOUNTS ||--o{ KLIK_CODES : "obciąża"
-    
     USERS ||--o{ KLIK_ALIASES : "rejestruje"
     ACCOUNTS ||--o{ KLIK_ALIASES : "wskazuje na"
+    USERS ||--o{ KLIK_AUTHORIZATIONS : "autoryzuje płatność"
+    ACCOUNTS ||--o{ KLIK_AUTHORIZATIONS : "obciąża"
 
-    %% Relacje AML
     ACCOUNTS ||--o{ AML_HOLDS : "ma zablokowane środki"
     TRANSACTIONS ||--o| AML_HOLDS : "jest zablokowana przez AML"
-
-    CARDS ||--o{ TRANSACTIONS : "obciąża"
