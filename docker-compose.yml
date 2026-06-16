@@ -31,6 +31,12 @@ services:
       KLIK_BASE_URL: ${KLIK_BASE_URL}
       KLIK_API_KEY: ${KLIK_API_KEY}
       KLIK_ZONE: ${KLIK_ZONE}
+      ELIXIR_BASE_URL: http://host.docker.internal:8081
+      EXPRESS_BASE_URL: http://host.docker.internal:8082
+      SORBNET_BASE_URL: http://host.docker.internal:8083
+      BANK_BICFI: BANK_A
+      BANK_SORBNET_ACCOUNT: SORBNET-A-00000000000000000001
+      BANK_ELIXIR_ACCOUNT: ELIXIR-A-00000000000000000001
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
