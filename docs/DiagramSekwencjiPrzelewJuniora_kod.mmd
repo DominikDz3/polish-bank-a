@@ -1,0 +1,43 @@
+sequenceDiagram
+    actor Junior
+    actor Rodzic
+    participant FE as Frontend
+    participant BE as Backend Bank
+    participant DB as PostgreSQL
+
+    Junior->>FE: Wypełnia formularz przelewu
+    FE->>BE: POST /api/transactions/internal + JWT
+    BE->>DB: SELECT junior account
+    DB-->>BE: Account (type=JUNIOR, parentAccount)
+
+    BE->>BE: Walidacja PIN, salda, limitu
+    BE->>DB: INSERT transaction (status=PENDING_APPROVAL)
+    BE->>DB: INSERT pending_approval (parentUserId, transactionId)
+    Note over BE,DB: Środki niezablokowane — przelew "w poczekalni"
+    BE-->>FE: 200 {status: PENDING_APPROVAL}
+    FE-->>Junior: "Czeka na zatwierdzenie rodzica"
+
+    Note over Rodzic,FE: Później — rodzic loguje się
+    Rodzic->>FE: Wchodzi w "Oczekujące zatwierdzenia"
+    FE->>BE: GET /api/junior/pending-approvals + JWT
+    BE->>DB: SELECT pending WHERE parentUserId
+    DB-->>BE: List PendingApproval
+    BE-->>FE: 200 List
+    FE-->>Rodzic: Lista oczekujących
+
+    alt Rodzic akceptuje
+        Rodzic->>FE: Klika "Zatwierdź"
+        FE->>BE: POST /api/junior/pending-approvals/{id}/approve
+        BE->>DB: UPDATE junior balance -= amount
+        BE->>DB: UPDATE receiver balance += amount
+        BE->>DB: UPDATE transaction SET status=COMPLETED
+        BE->>DB: UPDATE pending_approval SET status=APPROVED, resolved_at=NOW
+        BE-->>FE: 200 "Zatwierdzono"
+    else Rodzic odrzuca
+        Rodzic->>FE: Klika "Odrzuć"
+        FE->>BE: POST /api/junior/pending-approvals/{id}/reject
+        BE->>DB: UPDATE transaction SET status=REJECTED
+        BE->>DB: UPDATE pending_approval SET status=REJECTED, resolved_at=NOW
+        Note over BE,DB: Saldo nigdy nie zostało dotknięte
+        BE-->>FE: 200 "Odrzucono"
+    end

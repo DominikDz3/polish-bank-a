@@ -1,0 +1,141 @@
+classDiagram
+    class User {
+        +UUID id
+        +String customerNumber
+        +String firstName
+        +String lastName
+        +String email
+        +String passwordHash
+        +String phoneNumber
+        +LocalDate dateOfBirth
+        +UserRole role
+        +String pinHash
+        +int pinFailedAttempts
+        +LocalDateTime pinLockedUntil
+    }
+
+    class UserRole {
+        <<enumeration>>
+        ADMIN
+        CUSTOMER
+        JUNIOR
+    }
+
+    class Account {
+        +UUID id
+        +String accountNumber
+        +BigDecimal balance
+        +BigDecimal blockedFunds
+        +String currency
+        +String type
+    }
+
+    class Card {
+        +UUID id
+        +String cardNumber
+        +String maskedPan
+        +String providerToken
+        +String providerStatus
+        +String binPrefix
+        +BigDecimal transactionLimit
+        +BigDecimal dailyLimit
+        +String currency
+        +LocalDate expiryDate
+        +String type
+        +boolean isBlocked
+    }
+
+    class CardAuthorization {
+        +UUID id
+        +String authorizationCode
+        +String externalTransactionId
+        +BigDecimal amount
+        +String currency
+        +String merchantName
+        +String status
+        +LocalDateTime createdAt
+        +LocalDateTime settledAt
+    }
+
+    class Transaction {
+        +UUID id
+        +String senderAccountNumber
+        +String receiverAccountNumber
+        +String receiverBankBic
+        +String receiverName
+        +String title
+        +BigDecimal amount
+        +String currency
+        +String status
+        +String type
+        +String externalPaymentId
+        +LocalDateTime createdAt
+        +LocalDateTime executionDate
+    }
+
+    class PendingApproval {
+        +UUID id
+        +BigDecimal amount
+        +String description
+        +String status
+        +LocalDateTime createdAt
+        +LocalDateTime resolvedAt
+    }
+
+    class KlikCode {
+        +UUID id
+        +String code
+        +BigDecimal amount
+        +String status
+        +LocalDateTime createdAt
+        +LocalDateTime expiresAt
+        +LocalDateTime usedAt
+        +String idempotencyKey
+    }
+
+    class KlikAlias {
+        +UUID id
+        +String alias
+        +boolean active
+        +LocalDateTime createdAt
+    }
+
+    class KlikAuthorization {
+        +UUID id
+        +String externalId
+        +BigDecimal amount
+        +String currency
+        +String merchant
+        +String status
+        +LocalDateTime createdAt
+    }
+
+    class AmlHold {
+        +UUID id
+        +String reason
+        +String clientExplanation
+        +String status
+        +String createdBy
+        +LocalDateTime createdAt
+        +LocalDateTime releasedAt
+    }
+
+    User "1" -- "*" Account : posiada
+    User --> UserRole
+    Account "1" -- "0..*" Account : parentAccount (Junior)
+    Account "1" -- "*" Card : ma karty
+    Card "1" -- "*" CardAuthorization : ma autoryzacje
+    Account "1" -- "*" CardAuthorization
+    Account "1" -- "*" Transaction : sender/receiver
+    Card "0..1" -- "*" Transaction : obciąża
+    Account "1" -- "*" PendingApproval : Junior account
+    User "1" -- "*" PendingApproval : parentUser
+    Transaction "0..1" -- "0..1" PendingApproval
+    User "1" -- "*" KlikCode
+    Account "1" -- "*" KlikCode
+    User "1" -- "*" KlikAlias
+    Account "1" -- "*" KlikAlias
+    User "1" -- "*" KlikAuthorization
+    Account "1" -- "*" KlikAuthorization
+    Account "1" -- "*" AmlHold
+    Transaction "0..1" -- "0..1" AmlHold

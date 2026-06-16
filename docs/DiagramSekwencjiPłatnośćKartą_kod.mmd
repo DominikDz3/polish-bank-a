@@ -1,0 +1,37 @@
+sequenceDiagram
+    actor Klient
+    participant POS as POS Terminal
+    participant Provider as Cards Provider
+    participant ISO as Card Provider (ISO 8583)
+    participant Settle as Settlement Batch
+    participant Forward as ForwardFilter
+    participant BE as Backend Bank
+    participant DB as PostgreSQL
+
+    Klient->>POS: Wpisuje PAN, CVV, expiry, kwotę
+    POS->>Provider: POST /api/v1/payments/authorize
+    Provider->>ISO: Forward ISO 8583
+    ISO->>ISO: Walidacja (Luhn, status karty, expiry, CVV)
+    ISO-->>Provider: APPROVED
+    Provider-->>POS: APPROVED
+    POS-->>Klient: "APPROVED" na ekranie
+
+    Note over Provider,Settle: ~30s później — settlement batch
+    Settle->>BE: POST /capture {transaction_id, card_token, amount, ...}
+    BE->>Forward: dispatcher /capture
+    Forward->>BE: forward → /api/webhooks/cards/capture
+    BE->>DB: SELECT card BY provider_token
+    DB-->>BE: Card
+
+    alt Limit OK
+        BE->>BE: validateCardLimits(card, amount)
+        BE->>DB: UPDATE account SET balance -= amount
+        BE->>DB: INSERT transaction (status=COMPLETED, type=CARD_PAYMENT)
+        BE-->>Settle: 200 {status: SETTLED}
+    else Limit przekroczony
+        BE->>BE: validateCardLimits → IllegalStateException
+        BE->>DB: INSERT transaction (status=REJECTED) [REQUIRES_NEW]
+        Note over BE,DB: Audit trail — osobna transakcja, nie rollbackowana
+        BE-->>Settle: 400 (Limit exceeded)
+        Note over Settle: Provider widzi FAIL, transakcja nie księgowana
+    end
