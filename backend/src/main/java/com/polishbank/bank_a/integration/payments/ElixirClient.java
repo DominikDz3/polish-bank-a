@@ -5,6 +5,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -20,8 +21,8 @@ public class ElixirClient {
     public void sendPayment(String pacs008Xml) {
         restClient.post()
                 .uri("/api/elixir/payments")
-                .contentType(MediaType.APPLICATION_XML)
-                .body(pacs008Xml)
+                .contentType(new MediaType("application", "xml", StandardCharsets.UTF_8))
+                .body(pacs008Xml.getBytes(StandardCharsets.UTF_8))
                 .retrieve()
                 .toBodilessEntity();
     }

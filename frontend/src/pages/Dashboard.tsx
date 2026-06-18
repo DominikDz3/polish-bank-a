@@ -337,7 +337,7 @@ export default function Dashboard() {
 
                   {!isJunior && (
                     <>
-                      <button className="w-full bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex items-center justify-between hover:border-blue-500/50 hover:bg-zinc-900 transition-all group">
+                      <button onClick={() => navigate('/transfer/external')} className="w-full bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex items-center justify-between hover:border-blue-500/50 hover:bg-zinc-900 transition-all group">
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-blue-400 group-hover:bg-blue-500/10 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>

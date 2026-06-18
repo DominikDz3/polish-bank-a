@@ -15,6 +15,8 @@ import AddJunior from './pages/junior/AddJunior.tsx'
 import CardsPage from './pages/cards/CardsPage.tsx'
 import PendingApprovals from './pages/junior/PendingApprovals.tsx'
 import ManageJunior from './pages/junior/ManageJunior.tsx'
+import ExternalTransfer from './pages/auth/ExternalTransfer.tsx'
+
 
 
 function App() {
@@ -74,6 +76,12 @@ function App() {
             <ManageJunior />
           </ProtectedRoute>
         } />
+
+        <Route path={ROUTES.EXTERNAL_TRANSFER} element={
+          <ProtectedRoute>
+            <ExternalTransfer />
+          </ProtectedRoute>
+        }/>
       </Routes>
     </AuthProvider>
   )
