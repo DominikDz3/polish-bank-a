@@ -26,6 +26,10 @@ const STATUS_CONFIG: Record<string, { label: string; classes: string }> = {
   HELD_FOR_AML:     { label: 'Wstrzymana (AML)',               classes: 'bg-red-500/10 text-red-400 border-red-500/20' },
   REJECTED_AML:     { label: 'Odrzucona (AML)',                classes: 'bg-red-500/10 text-red-400 border-red-500/20' },
   REJECTED:         { label: 'Odrzucona',                      classes: 'bg-red-500/10 text-red-400 border-red-500/20' },
+  SENT:             { label: 'Wysłany do SWIFT',               classes: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  IN_TRANSIT:       { label: 'W drodze (SWIFT)',               classes: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  DELIVERED:        { label: 'Dostarczony (SWIFT)',            classes: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  RETURNED:         { label: 'Zwrócony',                       classes: 'bg-red-500/10 text-red-400 border-red-500/20' },
 };
 
 function StatusBadge({ status }: { status: string }) {
