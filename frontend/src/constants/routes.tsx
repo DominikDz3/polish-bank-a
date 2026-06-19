@@ -12,4 +12,6 @@ export const ROUTES = {
     JUNIOR_APPROVALS: '/junior/approvals',
     MANAGE_JUNIOR: '/junior/:accountId/manage',
     EXTERNAL_TRANSFER: '/transfer/external',
+    KLIK_P2P: '/transfer/klik',
+    SETTINGS: '/settings',
 };
