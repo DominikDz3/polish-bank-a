@@ -12,6 +12,8 @@ import com.polishbank.bank_a.repository.KlikAliasRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -67,7 +69,7 @@ public class KlikAliasService {
                 .stream().map(this::toView).toList();
     }
 
-    @Transactional
+@Transactional
     public void deleteAlias(UUID aliasId, String userEmail) {
         User user = userRepository.findByEmail(userEmail).orElseThrow();
         KlikAlias alias = aliasRepository.findById(aliasId)
@@ -77,10 +79,13 @@ public class KlikAliasService {
         }
         if (!alias.isActive()) return;
 
-        try {
-            klikClient.deleteAlias(alias.getAlias());
-        } catch (Exception e) {
-            throw new IllegalStateException("KLIK odrzucił usunięcie: " + e.getMessage());
+        if (alias.getKlikAliasId() != null) {
+            try {
+                klikClient.deleteAlias(alias.getAlias());
+            } catch (HttpClientErrorException.NotFound e) {
+            } catch (Exception e) {
+                throw new IllegalStateException("KLIK odrzucił usunięcie: " + e.getMessage());
+            }
         }
 
         alias.setActive(false);
