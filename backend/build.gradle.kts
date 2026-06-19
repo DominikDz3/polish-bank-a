@@ -35,6 +35,7 @@ dependencies {
 	testCompileOnly("org.projectlombok:lombok")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 	testAnnotationProcessor("org.projectlombok:lombok")
+	implementation("org.apache.httpcomponents.client5:httpclient5")
 }
 
 tasks.withType<Test> {

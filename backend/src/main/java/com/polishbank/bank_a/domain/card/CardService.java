@@ -84,10 +84,12 @@ public class CardService {
         cardRepository.save(card);
     }
 
-    private CardResponse toResponse(Card card) {
-        String masked = card.getCardNumber() == null
-                ? null
-                : "**** **** **** " + card.getCardNumber().substring(Math.max(0, card.getCardNumber().length() - 4));
+        private CardResponse toResponse(Card card) {
+        String masked = card.getMaskedPan() != null
+                ? card.getMaskedPan()
+                : (card.getCardNumber() == null
+                    ? null
+                    : "**** **** **** " + card.getCardNumber().substring(Math.max(0, card.getCardNumber().length() - 4)));
         return new CardResponse(
                 card.getId(),
                 card.getAccount().getId(),
@@ -99,7 +101,10 @@ public class CardService {
                 card.getCurrency(),
                 card.getExpiryDate(),
                 card.getType(),
-                card.isBlocked()
+                card.isBlocked(),
+                card.getProviderToken(),
+                card.getProviderStatus(),
+                card.getMaskedPan()
         );
     }
 }

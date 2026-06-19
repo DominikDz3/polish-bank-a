@@ -1,0 +1,102 @@
+classDiagram
+    class CardController {
+        <<RestController>>
+        +listMyCards(Authentication) ResponseEntity
+        +orderCard(OrderCardRequest) ResponseEntity
+        +block(UUID) ResponseEntity
+        +unblock(UUID) ResponseEntity
+        +activate(UUID) ResponseEntity
+        +topup(UUID, TopupCardRequest) ResponseEntity
+        +deleteCard(UUID) ResponseEntity
+        +devForceActivate(UUID) ResponseEntity
+    }
+
+    class CardOrderService {
+        <<Service>>
+        +orderForUser(email, type) OrderCardResponse
+        +orderForJunior(juniorAccountId, parentEmail, type) OrderCardResponse
+        +blockCard(cardId, email)
+        +activateCard(cardId, email)
+        +topupCard(cardId, email, amount) BigDecimal
+        +deleteCard(cardId, email)
+        +devForceActivate(cardId, email)
+    }
+
+    class CardPaymentService {
+        <<Service>>
+        +processPayment(CardPaymentRequest, email) PaymentResult
+    }
+
+    class CardsCallbackService {
+        <<Service>>
+        +authorize(AuthorizeWebhookRequest) AuthorizeWebhookResponse
+        +capture(CaptureWebhookRequest) CaptureWebhookResponse
+        +refund(RefundWebhookRequest) RefundWebhookResponse
+        -validateCardLimits(card, amount, txId, merchant)
+    }
+
+    class CardsCallbackController {
+        <<RestController>>
+        +authorize() ResponseEntity
+        +capture() ResponseEntity
+        +refund() ResponseEntity
+    }
+
+    class CardTransactionAuditService {
+        <<Service>>
+        +saveRejectedCardPayment(card, amount, txId, merchant, reason)
+    }
+
+    class CardsProviderClient {
+        <<Integration>>
+        +issueCard(IssueCardRequest) IssueCardResponse
+        +changeStatus(token, ChangeStatusRequest)
+        +activateCard(token, ActivateCardRequest)
+        +topupCard(token, TopupCardRequest) TopupCardResponse
+        +updateLifecycle(token, LifecycleRequest)
+        +getStatus(token) CardStatusResponse
+    }
+
+    class CardsProviderHmacSigner {
+        <<Component>>
+        +sign(secret, body) SignedRequest
+    }
+
+    class CardRepository {
+        <<JpaRepository>>
+        +findByProviderToken(token) Optional~Card~
+    }
+
+    class CardAuthorizationRepository {
+        <<JpaRepository>>
+        +findByAuthorizationCode(code) Optional
+        +findByExternalTransactionId(id) Optional
+    }
+
+    class TransactionRepository {
+        <<JpaRepository>>
+    }
+
+    class Card {
+        <<Entity>>
+    }
+
+    class CardAuthorization {
+        <<Entity>>
+    }
+
+    CardController --> CardOrderService
+    CardController --> CardPaymentService
+    CardController --> CardService
+    CardsCallbackController --> CardsCallbackService
+    CardOrderService --> CardsProviderClient
+    CardOrderService --> CardRepository
+    CardOrderService --> TransactionRepository
+    CardsCallbackService --> CardRepository
+    CardsCallbackService --> CardAuthorizationRepository
+    CardsCallbackService --> TransactionRepository
+    CardsCallbackService --> CardTransactionAuditService
+    CardTransactionAuditService --> TransactionRepository
+    CardsProviderClient --> CardsProviderHmacSigner
+    CardRepository --> Card
+    CardAuthorizationRepository --> CardAuthorization

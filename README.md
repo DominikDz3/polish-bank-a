@@ -80,7 +80,73 @@ System bankowy (BANK A) -> SFTP -> KIR -> SFTP -> System bankowy (BANK B)
 *TBD*
 
 ### 4.7 Karty płatnicze
-*TBD*
+
+Karta płatnicza to instrument płatniczy wydany przez bank (issuer) i obsługiwany przez zewnętrznego providera kart. Bank A jest **issuerem** — zamawia karty u providera, autoryzuje wydanie ich klientowi, prowadzi konto z którego rozliczane są transakcje. Provider zarządza cyklem życia karty, generowaniem PAN/CVV i autoryzacją płatności w sieci POS.
+
+#### 4.7.1 Architektura integracji
+
+System współpracuje z providerem [Karty-Platnicze-Aplikacje-Biznesowe](https://github.com/FilipSl3/Karty-Platnicze-Aplikacje-Biznesowe) w modelu czterostronnym (Cardholder ↔ Issuer Bank ↔ Acquirer/POS ↔ Merchant).
+
+Komunikacja dwukierunkowa:
+
+* **Bank → Provider** (REST + HMAC-SHA256): zamawianie karty, blokada/odblokowanie, aktywacja, doładowanie PREPAID, lifecycle (DEV). Każde żądanie podpisane HMAC-SHA256 z timestampem (ochrona przed replay attacks, ważne 30s).
+* **Provider → Bank** (REST, bez auth, sieć VPN/Docker internal): webhook `/capture` (rozliczenie po settlement). W rzeczywistości bank A jest osiągalny w sieci `cards-backend` pod aliasem `polish-bank-a:8000`.
+
+#### 4.7.2 Typy kart
+
+| Typ | Domyślny limit transakcji | Domyślny limit dzienny | Aktywacja | Przeznaczenie |
+|---|---|---|---|---|
+| **VIRTUAL** | 500 PLN | 2 000 PLN | Auto, do 1h | Zakupy online |
+| **PHYSICAL** | 5 000 PLN | 20 000 PLN | Po dostawie (REQUESTED → PRODUCING → SHIPPED → ACTIVE) | Karta główna |
+| **PREPAID** | 200 PLN | 500 PLN | Auto, do 1h | Konto Junior — wymaga zasilenia przez rodzica |
+
+#### 4.7.3 Lifecycle karty
+REQUESTED → PRODUCING → SHIPPED → ACTIVE ↔ BLOCKED
+↓
+USUNIĘTA (BLOCKED u providera + delete lokalnie)
+
+
+Dla VIRTUAL provider auto-aktywuje kartę po 1h. Dla PHYSICAL klient (bank) musi przeprowadzić kartę przez cykl produkcji. Endpoint **"Wymuś aktywację (DEV)"** symuluje pełen cykl jednym kliknięciem na potrzeby demonstracji.
+
+#### 4.7.4 Flow płatności kartą
+
+1. Klient w POS providera podaje PAN + CVV + expiry + kwotę.
+2. Provider lokalnie autoryzuje (sprawdza status, expiry, balance dla PREPAID).
+3. POS pokazuje **APPROVED**.
+4. Co 30s settlement batch wywołuje `POST /capture` na webhook banku.
+5. Bank waliduje **limity karty** (transakcji, dzienny, blokada).
+   * Jeśli OK → `Account.balance -= amount`, zapis `Transaction` ze statusem `COMPLETED`.
+   * Jeśli przekroczono limit → `Transaction` ze statusem `REJECTED` (audit trail), saldo niezmienione, provider dostaje HTTP 400.
+6. Klient widzi transakcję w historii (zrealizowaną lub odrzuconą z powodem).
+
+#### 4.7.5 Karta Junior (PREPAID)
+
+* Rodzic zamawia kartę PREPAID dla konta dziecka.
+* Doładowanie karty = przelew z konta rodzica → konto Juniora + topup u providera. Klient widzi w historii rodzica `-X PLN "Doładowanie karty PREPAID (•••• 5091)"` i Juniora `+X PLN`.
+* Rodzic może w panelu Junior: zamówić kartę, aktywować (DEV), doładować, ustawić limity (transakcji + dzienny), zablokować, odblokować, usunąć.
+* Junior używa karty u POS, capture obciąża jego konto.
+
+#### 4.7.6 Bezpieczeństwo
+
+* **PCI-DSS friendly**: bank lokalnie przechowuje tylko `provider_token` + `masked_pan` (np. `4100 01** **** 5091`), nigdy pełnego PAN ani CVV.
+* **Idempotencja webhooków** przez `card_authorizations.external_transaction_id UNIQUE` — wielokrotne wywołanie capture z tym samym `transaction_id` zwraca tę samą decyzję.
+* **HMAC-SHA256** podpis żądań do providera (sekret w env, weryfikacja timestamp).
+* **REJECTED audit trail** — każda transakcja odrzucona z powodu limitu jest zapisana w historii w osobnej transakcji DB (`REQUIRES_NEW`), niezależnie od rollbacku głównej transakcji webhooka.
+
+#### 4.7.7 Endpointy banku
+
+| Endpoint | Metoda | Opis |
+|---|---|---|
+| `/api/cards` | GET | Lista kart klienta |
+| `/api/cards/junior/{accountId}` | GET | Karty Juniora (dla rodzica) |
+| `/api/cards/order` | POST | Zamów VIRTUAL/PHYSICAL |
+| `/api/cards/junior/{accountId}/order` | POST | Zamów PREPAID dla Juniora |
+| `/api/cards/{id}/block` `/unblock` `/activate` | POST | Lifecycle |
+| `/api/cards/{id}/topup` | POST | Doładowanie PREPAID (rodzic→Junior) |
+| `/api/cards/{id}/limits` | PATCH | Limity transakcji/dzienny |
+| `/api/cards/{id}` | DELETE | Trwałe usunięcie (BLOCKED u providera + delete lokalnie) |
+| `/api/cards/{id}/dev/force-activate` | POST | DEV: REQUESTED → ACTIVE |
+| `/capture` (alias dla `/api/webhooks/cards/capture`) | POST | Webhook od providera — settlement |
 
 ## 5. Diagramy
 
@@ -216,14 +282,14 @@ erDiagram
     %% ==========================================
     USERS {
         UUID id PK
-        varchar customer_number "UNIQUE"
+        varchar customer_number "UNIQUE, 8 znaków"
         varchar first_name
         varchar last_name
         varchar email "UNIQUE"
         varchar password_hash
-        varchar phone_number
+        varchar phone_number "UNIQUE"
         date date_of_birth
-        varchar role
+        varchar role "ADMIN, CUSTOMER, JUNIOR"
         varchar pin_hash "BCrypt, NULL = nieustawiony"
         int pin_failed_attempts "licznik nieudanych prób"
         timestamp pin_locked_until "blokada PIN do tego czasu"
@@ -236,20 +302,38 @@ erDiagram
         decimal balance
         decimal blocked_funds
         varchar currency
-        varchar type
+        varchar type "STANDARD, JUNIOR, BANK_INTERNAL"
         UUID parent_account_id FK "Może być NULL"
     }
 
     CARDS {
         UUID id PK
         UUID account_id FK
-        varchar card_number "UNIQUE"
+        varchar card_number "deprecated, używany maskowany"
+        varchar masked_pan "4100 01** **** 5852"
+        varchar provider_token "UNIQUE, klucz integracji z providerem"
+        varchar provider_status "REQUESTED, PRODUCING, SHIPPED, ACTIVE, BLOCKED"
+        varchar bin_prefix
         decimal transaction_limit
+        decimal daily_limit "Limit dzienny (NULL = brak)"
         varchar currency
         date expiry_date
-        varchar type
+        varchar type "VIRTUAL, PHYSICAL, PREPAID"
         boolean is_blocked
-        decimal daily_limit "Limit dzienny (NULL = brak)"
+    }
+
+    CARD_AUTHORIZATIONS {
+        UUID id PK
+        varchar authorization_code "UNIQUE"
+        varchar external_transaction_id "UNIQUE, idempotencja webhooków"
+        UUID card_id FK
+        UUID account_id FK
+        decimal amount
+        varchar currency
+        varchar merchant_name
+        varchar status "HELD, SETTLED, REFUNDED, EXPIRED"
+        timestamp created_at
+        timestamp settled_at
     }
 
     TRANSACTIONS {
@@ -263,12 +347,12 @@ erDiagram
         varchar title
         decimal amount
         varchar currency
-        varchar status
-        varchar type
+        varchar status "COMPLETED, PENDING, PENDING_APPROVAL, REJECTED, HELD_FOR_AML"
+        varchar type "INTERNAL, CARD_PAYMENT, CARD_PAYMENT_REJECTED, CARD_TOPUP, KLIK"
         varchar external_payment_id
         timestamp created_at
         timestamp execution_date
-        UUID card_id FK "NULL jeśli nie płatność kartą"        
+        UUID card_id FK "NULL jeśli nie płatność kartą"
     }
 
     %% ==========================================
@@ -290,7 +374,7 @@ erDiagram
         UUID id PK
         UUID user_id FK
         UUID account_id FK
-        varchar code
+        varchar code "6 cyfr"
         decimal amount
         varchar status "ACTIVE, USED, EXPIRED"
         timestamp created_at
@@ -303,9 +387,22 @@ erDiagram
         UUID id PK
         UUID user_id FK
         UUID account_id FK
-        varchar alias "UNIQUE"
+        varchar alias "UNIQUE, numer telefonu"
         boolean active
         timestamp created_at
+    }
+
+    KLIK_AUTHORIZATIONS {
+        UUID id PK
+        UUID user_id FK
+        UUID account_id FK
+        varchar external_id "ID od dostawcy KLIK"
+        decimal amount
+        varchar currency
+        varchar merchant
+        varchar status "PENDING, CONFIRMED, REJECTED, EXPIRED"
+        timestamp created_at
+        timestamp resolved_at
     }
 
     AML_HOLDS {
@@ -325,58 +422,510 @@ erDiagram
     %% ==========================================
     USERS ||--o{ ACCOUNTS : "posiada"
     ACCOUNTS ||--o{ ACCOUNTS : "ma subkonta (Junior)"
-    
+
     ACCOUNTS ||--o{ CARDS : "jest podpięte pod"
-    
+    CARDS ||--o{ CARD_AUTHORIZATIONS : "ma autoryzacje"
+    ACCOUNTS ||--o{ CARD_AUTHORIZATIONS : "obciąża"
+
     ACCOUNTS ||--o{ TRANSACTIONS : "wysyła (sender)"
     ACCOUNTS ||--o{ TRANSACTIONS : "odbiera (receiver)"
+    CARDS ||--o{ TRANSACTIONS : "obciąża"
 
-    %% Relacje Pending Approvals
     ACCOUNTS ||--o{ PENDING_APPROVALS : "wymaga akceptacji (Junior)"
     USERS ||--o{ PENDING_APPROVALS : "akceptuje (Rodzic)"
     TRANSACTIONS ||--o| PENDING_APPROVALS : "dotyczy (opcjonalnie)"
 
-    %% Relacje BLIK (KLIK)
     USERS ||--o{ KLIK_CODES : "generuje"
     ACCOUNTS ||--o{ KLIK_CODES : "obciąża"
-    
     USERS ||--o{ KLIK_ALIASES : "rejestruje"
     ACCOUNTS ||--o{ KLIK_ALIASES : "wskazuje na"
+    USERS ||--o{ KLIK_AUTHORIZATIONS : "autoryzuje płatność"
+    ACCOUNTS ||--o{ KLIK_AUTHORIZATIONS : "obciąża"
 
-    %% Relacje AML
     ACCOUNTS ||--o{ AML_HOLDS : "ma zablokowane środki"
     TRANSACTIONS ||--o| AML_HOLDS : "jest zablokowana przez AML"
 
-    CARDS ||--o{ TRANSACTIONS : "obciąża"
 
 ```
 Schemat bazy danych (zaprojektowany dla PostgreSQL) stanowi fundament aplikacji. Architektura została w pełni znormalizowana i zoptymalizowana pod kątem bezpieczeństwa transakcyjnego oraz audytowalności operacji finansowych.
 
-Zamiast standardowych identyfikatorów numerycznych, we wszystkich tabelach zastosowano klucze główne typu UUID. Jest to kluczowy mechanizm obronny zapobiegający atakom typu IDOR i uniemożliwiający wyliczanie (enumerację) wielkości bazy klientów przez osoby nieuprawnione.
+Zamiast standardowych identyfikatorów numerycznych, we wszystkich tabelach zastosowano klucze główne typu **UUID**. Jest to kluczowy mechanizm obronny zapobiegający atakom typu IDOR i uniemożliwiający wyliczanie (enumerację) wielkości bazy klientów przez osoby nieuprawnione.
 
-Baza danych została podzielona na 5 logicznych podsystemów:
+Baza danych została podzielona na **6 logicznych podsystemów**:
 
 #### 1. Rdzeń Systemu
-* **USERS:** Przechowuje kluczowe dane autoryzacyjne oraz profilowe. Ograniczenia UNIQUE nałożone na customer_number (8-cyfrowy CIF) oraz email gwarantują spójność tożsamości klienta. Pole date_of_birth pozwala algorytmom na dynamiczną weryfikację wieku (niezbędne przy kontach Junior).
 
-* **ACCOUNTS:** Centralna tabela finansowa wykorzystująca typ DECIMAL(15, 2) dla absolutnej precyzji zmiennoprzecinkowej. Wyróżnia się zastosowaniem relacji rekurencyjnej – klucz obcy parent_account_id pozwala na zagnieżdżanie subkont (np. kont dzieci) pod kontami głównymi rodziców. Tabela posiada również kolumnę blocked_funds, która odseparowuje środki dostępne od tych zamrożonych (np. przez nierozliczone autoryzacje kartowe).
+* **USERS:** Przechowuje kluczowe dane autoryzacyjne oraz profilowe. Ograniczenia UNIQUE nałożone na `customer_number` (8-cyfrowy CIF) oraz `email` gwarantują spójność tożsamości klienta. Pole `date_of_birth` pozwala algorytmom na dynamiczną weryfikację wieku (niezbędne przy kontach Junior). Tabela posiada również pola obsługi kodu PIN: `pin_hash` (BCrypt), `pin_failed_attempts` (licznik nieudanych prób) i `pin_locked_until` (czasowa blokada po przekroczeniu limitu prób — ochrona przed brute-force).
 
-* **CARDS:** Powiązana z kontem relacją ON DELETE CASCADE. Definiuje wirtualne i fizyczne nośniki płatnicze wraz z ich indywidualnymi limitami (transaction_limit) oraz flagą natychmiastowej blokady (is_blocked).
+* **ACCOUNTS:** Centralna tabela finansowa wykorzystująca typ `DECIMAL(15, 2)` dla absolutnej precyzji arytmetycznej. Wyróżnia się zastosowaniem **relacji rekurencyjnej** — klucz obcy `parent_account_id` pozwala na zagnieżdżanie subkont (np. kont dzieci) pod kontami głównymi rodziców. Tabela posiada również kolumnę `blocked_funds`, która odseparowuje środki dostępne od tych zamrożonych (np. przez nierozliczone autoryzacje kartowe lub blokady AML).
+
+* **CARDS:** Powiązana z kontem relacją `ON DELETE CASCADE`. Definiuje wirtualne, fizyczne i prepaid nośniki płatnicze. Po integracji z zewnętrznym providerem kart tabela przechowuje **dane referencyjne** (`provider_token`, `provider_status`, `masked_pan`, `bin_prefix`), a **nigdy** pełnego numeru PAN ani CVV. Pełne dane karty są wyświetlane klientowi tylko jednorazowo, w momencie wydania (zgodnie z duchem PCI-DSS). Atrybuty `transaction_limit` i `daily_limit` umożliwiają egzekwowanie limitów po stronie banku przy każdym rozliczeniu.
 
 #### 2. Silnik Rozliczeniowy
-* **TRANSACTIONS:** Tabela zaprojektowana jako niezmienna księga główna. Zastosowano tu kluczową zasadę audytu: klucze obce sender_account_id oraz receiver_account_id posiadają regułę ON DELETE SET NULL. Dzięki temu, nawet jeśli klient zamknie konto (a jego rekord zniknie z bazy), pełna historia jego przelewów pozostanie nienaruszona do celów kontroli skarbowej. Kolumna external_payment_id pozwala na integrację z systemami banków zewnętrznych (NBP, SWIFT).
 
-#### 3. Moduł Nadzoru Autoryzacji
-* **PENDING_APPROVALS:** Dedykowana "poczekalnia" dla zleceń oczekujących. Wiąże ze sobą konto Juniora, identyfikator Rodzica oraz konkretną transakcję. Tabela obsługuje maszynę stanów z flagami PENDING, APPROVED, REJECTED, przechowując precyzyjne stemple czasowe (resolved_at) każdej decyzji podjętej przez opiekuna.
+* **TRANSACTIONS:** Tabela zaprojektowana jako niezmienna **księga główna** (event log). Zastosowano tu kluczową zasadę audytu: klucze obce `sender_account_id` oraz `receiver_account_id` posiadają regułę `ON DELETE SET NULL`. Dzięki temu, nawet jeśli klient zamknie konto (a jego rekord zniknie z bazy), pełna historia jego przelewów pozostanie nienaruszona do celów kontroli skarbowej. Kolumna `external_payment_id` pozwala na integrację z systemami zewnętrznymi (NBP, SWIFT, provider kart). Rozszerzony enum `type` obsługuje wiele scenariuszy: standardowe przelewy (`INTERNAL`), płatności kartą (`CARD_PAYMENT`), audyt odrzuconych transakcji (`CARD_PAYMENT_REJECTED`), doładowania prepaid (`CARD_TOPUP`), płatności BLIK (`KLIK`).
+
+#### 3. Moduł Nadzoru Autoryzacji (Junior)
+
+* **PENDING_APPROVALS:** Dedykowana "poczekalnia" dla zleceń oczekujących. Wiąże ze sobą konto Juniora, identyfikator Rodzica oraz konkretną transakcję. Tabela obsługuje **maszynę stanów** z flagami `PENDING`, `APPROVED`, `REJECTED`, przechowując precyzyjne stemple czasowe (`resolved_at`) każdej decyzji podjętej przez opiekuna. Środki Juniora pozostają nienaruszone do momentu zatwierdzenia — to gwarantuje że bez zgody rodzica żadne pieniądze nie opuszczają konta dziecka.
 
 #### 4. Ekosystem BLIK (KLIK)
-* **KLIK_CODES:** Zarządza rygorystycznym cyklem życia kodów jednorazowych (6 cyfr). Poza statusami (Active, Used, Expired) oraz stemplami czasowymi, posiada kluczową dla systemów rozproszonych kolumnę idempotency_key. Zabezpiecza ona przed podwójnym obciążeniem konta klienta w przypadku opóźnień sieciowych (tzw. retry attacks).
 
-* **KLIK_ALIASES:** Rozwiązuje problem mapowania numeru telefonu klienta na jego account_id, umożliwiając realizację błyskawicznych przelewów P2P (Peer-to-Peer) w systemie Express Elixir.
+* **KLIK_CODES:** Zarządza rygorystycznym cyklem życia kodów jednorazowych (6 cyfr). Poza statusami (`ACTIVE`, `USED`, `EXPIRED`) oraz stemplami czasowymi, posiada kluczową dla systemów rozproszonych kolumnę `idempotency_key`. Zabezpiecza ona przed podwójnym obciążeniem konta klienta w przypadku opóźnień sieciowych (tzw. retry attacks).
+
+* **KLIK_ALIASES:** Rozwiązuje problem mapowania numeru telefonu klienta na jego `account_id`, umożliwiając realizację błyskawicznych przelewów P2P (Peer-to-Peer) w systemie Express Elixir.
+
+* **KLIK_AUTHORIZATIONS:** Dedykowana tabela do obsługi **webhooków od dostawcy KLIK**. Przechowuje stan każdej żądanej autoryzacji płatności w cyklu `PENDING → CONFIRMED/REJECTED/EXPIRED`. Klient w aplikacji widzi listę oczekujących autoryzacji i jednym kliknięciem zatwierdza lub odrzuca każdą z nich. Pole `external_id` pozwala na **idempotentne** odbieranie wielokrotnych webhooków od dostawcy KLIK.
 
 #### 5. System Anti-Money Laundering
-* **AML_HOLDS:** Tabela prewencyjna dla transakcji i kont wysokiego ryzyka. Wiąże się bezpośrednio z podejrzaną transakcją lub całym kontem klienta. Umożliwia asynchroniczną komunikację na linii Bank-Klient poprzez kolumny reason (powód blokady nałożonej przez algorytm) oraz client_explanation (wyjaśnienia dostarczone z poziomu aplikacji klienckiej).
 
+* **AML_HOLDS:** Tabela prewencyjna dla transakcji i kont wysokiego ryzyka. Wiąże się bezpośrednio z podejrzaną transakcją lub całym kontem klienta. Umożliwia asynchroniczną komunikację na linii Bank-Klient poprzez kolumny `reason` (powód blokady nałożonej przez algorytm) oraz `client_explanation` (wyjaśnienia dostarczone z poziomu aplikacji klienckiej). Po przeglądnięciu wyjaśnień pracownik banku może zwolnić blokadę (`status: RELEASED`).
+
+#### 6. Integracja z Providerem Kart Płatniczych
+
+* **CARD_AUTHORIZATIONS:** Tabela kluczowa dla **asynchronicznej integracji** z zewnętrznym systemem kart płatniczych. Obsługuje pełen cykl rozliczenia transakcji kartowej: od pre-autoryzacji (`HELD`), przez settlement (`SETTLED`), aż po ewentualne zwroty (`REFUNDED`) lub wygasanie (`EXPIRED`). Kolumna `external_transaction_id` z ograniczeniem `UNIQUE` zapewnia **idempotencję webhooków** — wielokrotne wywołanie `/capture` z tym samym `transaction_id` przez providera (np. po niepowodzeniu sieciowym) zwraca tę samą decyzję bez podwójnego obciążenia konta. Pole `authorization_code` zapewnia unikalny identyfikator nadany przez bank, używany przez providera w późniejszych operacjach (settlement, refund).
+
+---
+
+**Migracje Flyway** zarządzają ewolucją schematu w sposób kontrolowany:
+- `V1__init_schema.sql` — podstawowy schemat (USERS, ACCOUNTS, CARDS, TRANSACTIONS, PENDING_APPROVALS, KLIK_CODES, KLIK_ALIASES, AML_HOLDS)
+- `V2__add_pin.sql` — kolumny obsługi kodu PIN w tabeli USERS
+- `V3__junior_card_limits.sql` — dodanie `daily_limit` w CARDS oraz wsparcia limitów dziennych
+- `V4__klik_authorizations.sql` — tabela KLIK_AUTHORIZATIONS (asynchroniczne webhooki BLIK)
+- `V5__cards_provider_integration.sql` — kolumny providera w CARDS (`provider_token`, `provider_status`, `masked_pan`, `bin_prefix`) + tabela CARD_AUTHORIZATIONS
+
+
+### 5.3 Diagram Klas (UML)
+
+Sekcja prezentuje dwa diagramy klas o **różnym poziomie abstrakcji**, które razem opisują warstwę domenową aplikacji:
+
+- **5.3.1 Model domeny** — odpowiednik diagramu klas dla analityka. Pokazuje **co** istnieje w systemie: encje biznesowe (klient, konto, karta, transakcja), ich atrybuty oraz wzajemne relacje. Stanowi mostek między ERD (sekcja 5.2), a kodem aplikacji.
+- **5.3.2 Architektura warstwowa** — diagram dla programisty. Pokazuje **jak** komponenty współpracują w kodzie: które klasy są kontrolerami REST, które serwisami z logiką biznesową, które adapterami do systemów zewnętrznych. Zaprezentowana na przykładzie modułu kart (najbardziej rozbudowanego), ten sam schemat warstw stosowany jest w pozostałych modułach.
+
+#### 5.3.1 Model domeny — encje główne
+
+```mermaid
+classDiagram
+    class User {
+        +UUID id
+        +String customerNumber
+        +String firstName
+        +String lastName
+        +String email
+        +String passwordHash
+        +String phoneNumber
+        +LocalDate dateOfBirth
+        +UserRole role
+        +String pinHash
+        +int pinFailedAttempts
+        +LocalDateTime pinLockedUntil
+    }
+
+    class UserRole {
+        <<enumeration>>
+        ADMIN
+        CUSTOMER
+        JUNIOR
+    }
+
+    class Account {
+        +UUID id
+        +String accountNumber
+        +BigDecimal balance
+        +BigDecimal blockedFunds
+        +String currency
+        +String type
+    }
+
+    class Card {
+        +UUID id
+        +String cardNumber
+        +String maskedPan
+        +String providerToken
+        +String providerStatus
+        +String binPrefix
+        +BigDecimal transactionLimit
+        +BigDecimal dailyLimit
+        +String currency
+        +LocalDate expiryDate
+        +String type
+        +boolean isBlocked
+    }
+
+    class CardAuthorization {
+        +UUID id
+        +String authorizationCode
+        +String externalTransactionId
+        +BigDecimal amount
+        +String currency
+        +String merchantName
+        +String status
+        +LocalDateTime createdAt
+        +LocalDateTime settledAt
+    }
+
+    class Transaction {
+        +UUID id
+        +String senderAccountNumber
+        +String receiverAccountNumber
+        +String receiverBankBic
+        +String receiverName
+        +String title
+        +BigDecimal amount
+        +String currency
+        +String status
+        +String type
+        +String externalPaymentId
+        +LocalDateTime createdAt
+        +LocalDateTime executionDate
+    }
+
+    class PendingApproval {
+        +UUID id
+        +BigDecimal amount
+        +String description
+        +String status
+        +LocalDateTime createdAt
+        +LocalDateTime resolvedAt
+    }
+
+    class KlikCode {
+        +UUID id
+        +String code
+        +BigDecimal amount
+        +String status
+        +LocalDateTime createdAt
+        +LocalDateTime expiresAt
+        +LocalDateTime usedAt
+        +String idempotencyKey
+    }
+
+    class KlikAlias {
+        +UUID id
+        +String alias
+        +boolean active
+        +LocalDateTime createdAt
+    }
+
+    class KlikAuthorization {
+        +UUID id
+        +String externalId
+        +BigDecimal amount
+        +String currency
+        +String merchant
+        +String status
+        +LocalDateTime createdAt
+    }
+
+    class AmlHold {
+        +UUID id
+        +String reason
+        +String clientExplanation
+        +String status
+        +String createdBy
+        +LocalDateTime createdAt
+        +LocalDateTime releasedAt
+    }
+
+    User "1" -- "*" Account : posiada
+    User --> UserRole
+    Account "1" -- "0..*" Account : parentAccount (Junior)
+    Account "1" -- "*" Card : ma karty
+    Card "1" -- "*" CardAuthorization : ma autoryzacje
+    Account "1" -- "*" CardAuthorization
+    Account "1" -- "*" Transaction : sender/receiver
+    Card "0..1" -- "*" Transaction : obciąża
+    Account "1" -- "*" PendingApproval : Junior account
+    User "1" -- "*" PendingApproval : parentUser
+    Transaction "0..1" -- "0..1" PendingApproval
+    User "1" -- "*" KlikCode
+    Account "1" -- "*" KlikCode
+    User "1" -- "*" KlikAlias
+    Account "1" -- "*" KlikAlias
+    User "1" -- "*" KlikAuthorization
+    Account "1" -- "*" KlikAuthorization
+    Account "1" -- "*" AmlHold
+    Transaction "0..1" -- "0..1" AmlHold
+```
+Każdy obiekt domeny ma identyfikator typu UUID (zgodnie z konwencją z ERD), enkapsulując dane biznesowe związane z określoną odpowiedzialnością. Relacje 1-do-wielu (np. `User ←→ Account`) odzwierciedlają realny model bankowy: klient może mieć wiele kont, konto wiele kart, karta wiele autoryzacji. Relacja rekurencyjna `Account → Account (parentAccount)` modeluje hierarchię rodzic-Junior. Klasa `UserRole` jest enumeracją wyodrębnioną dla jasności typów.
+
+#### 5.3.2 Architektura warstwowa (na przykładzie modułu kart)
+
+Aplikacja stosuje klasyczny podział na warstwy: Controller → Service → Repository → Entity. Poniższy diagram pokazuje strukturę dla modułu kart, włącznie z integracją zewnętrzną.
+
+```mermaid
+classDiagram
+    class CardController {
+        <<RestController>>
+        +listMyCards(Authentication) ResponseEntity
+        +orderCard(OrderCardRequest) ResponseEntity
+        +block(UUID) ResponseEntity
+        +unblock(UUID) ResponseEntity
+        +activate(UUID) ResponseEntity
+        +topup(UUID, TopupCardRequest) ResponseEntity
+        +deleteCard(UUID) ResponseEntity
+        +devForceActivate(UUID) ResponseEntity
+    }
+
+    class CardOrderService {
+        <<Service>>
+        +orderForUser(email, type) OrderCardResponse
+        +orderForJunior(juniorAccountId, parentEmail, type) OrderCardResponse
+        +blockCard(cardId, email)
+        +activateCard(cardId, email)
+        +topupCard(cardId, email, amount) BigDecimal
+        +deleteCard(cardId, email)
+        +devForceActivate(cardId, email)
+    }
+
+    class CardPaymentService {
+        <<Service>>
+        +processPayment(CardPaymentRequest, email) PaymentResult
+    }
+
+    class CardsCallbackService {
+        <<Service>>
+        +authorize(AuthorizeWebhookRequest) AuthorizeWebhookResponse
+        +capture(CaptureWebhookRequest) CaptureWebhookResponse
+        +refund(RefundWebhookRequest) RefundWebhookResponse
+        -validateCardLimits(card, amount, txId, merchant)
+    }
+
+    class CardsCallbackController {
+        <<RestController>>
+        +authorize() ResponseEntity
+        +capture() ResponseEntity
+        +refund() ResponseEntity
+    }
+
+    class CardTransactionAuditService {
+        <<Service>>
+        +saveRejectedCardPayment(card, amount, txId, merchant, reason)
+    }
+
+    class CardsProviderClient {
+        <<Integration>>
+        +issueCard(IssueCardRequest) IssueCardResponse
+        +changeStatus(token, ChangeStatusRequest)
+        +activateCard(token, ActivateCardRequest)
+        +topupCard(token, TopupCardRequest) TopupCardResponse
+        +updateLifecycle(token, LifecycleRequest)
+        +getStatus(token) CardStatusResponse
+    }
+
+    class CardsProviderHmacSigner {
+        <<Component>>
+        +sign(secret, body) SignedRequest
+    }
+
+    class CardRepository {
+        <<JpaRepository>>
+        +findByProviderToken(token) Optional~Card~
+    }
+
+    class CardAuthorizationRepository {
+        <<JpaRepository>>
+        +findByAuthorizationCode(code) Optional
+        +findByExternalTransactionId(id) Optional
+    }
+
+    class TransactionRepository {
+        <<JpaRepository>>
+    }
+
+    class Card {
+        <<Entity>>
+    }
+
+    class CardAuthorization {
+        <<Entity>>
+    }
+
+    CardController --> CardOrderService
+    CardController --> CardPaymentService
+    CardController --> CardService
+    CardsCallbackController --> CardsCallbackService
+    CardOrderService --> CardsProviderClient
+    CardOrderService --> CardRepository
+    CardOrderService --> TransactionRepository
+    CardsCallbackService --> CardRepository
+    CardsCallbackService --> CardAuthorizationRepository
+    CardsCallbackService --> TransactionRepository
+    CardsCallbackService --> CardTransactionAuditService
+    CardTransactionAuditService --> TransactionRepository
+    CardsProviderClient --> CardsProviderHmacSigner
+    CardRepository --> Card
+    CardAuthorizationRepository --> CardAuthorization
+```
+
+Każde żądanie HTTP klienta przechodzi przez warstwy: **Controller** (walidacja, mapowanie DTO), **Service** (logika biznesowa, transakcje), **Repository** (dostęp do bazy), **Entity** (model danych). Integracja z zewnętrznym systemem kart jest enkapsulowana w warstwie `Integration` (`CardsProviderClient`), co realizuje wzorzec **Adapter**: zewnętrzny system jest abstrakcją, którą resztę aplikacji widzi jako lokalny serwis.
+
+### 5.4 Diagramy Sekwencji
+
+W odróżnieniu od diagramów klas (które pokazują **strukturę statyczną**), diagramy sekwencji pokazują **dynamiczne interakcje** w czasie. Każdy z poniższych przepływów obrazuje pełną podróż żądania od użytkownika do bazy danych — łącznie z systemami zewnętrznymi (provider kart). Wybrano cztery procesy najbardziej charakterystyczne dla aplikacji bankowej: dwa wymagające integracji zewnętrznej (5.4.1, 5.4.2) i dwa wewnętrzne ale z wieloma stanami (5.4.3, 5.4.4).
+
+#### 5.4.1 Zamówienie karty u providera (HMAC-signed)
+
+Pokazuje pełen flow zamówienia karty przez klienta, włącznie z podpisem HMAC i zapisem `provider_token` do lokalnej bazy banku.
+
+```mermaid
+sequenceDiagram
+    actor Klient
+    participant FE as Frontend (React)
+    participant BE as Backend Bank (Spring)
+    participant Signer as HmacSigner
+    participant Provider as Cards Provider (FastAPI)
+    participant DB as PostgreSQL
+
+    Klient->>FE: Klika "Zamów kartę VIRTUAL"
+    FE->>BE: POST /api/cards/order {cardType:VIRTUAL} + JWT
+    BE->>DB: SELECT user, account
+    DB-->>BE: User + Account
+    BE->>BE: serializuj IssueCardRequest (snake_case)
+    BE->>Signer: sign(hmacSecret, body)
+    Signer-->>BE: SignedRequest {signature, timestamp, bodyJson}
+    BE->>Provider: POST /api/v1/cards/issue
+    Note over BE,Provider: Headers: X-API-Key, X-Signature, X-Timestamp
+    Provider->>Provider: weryfikacja HMAC + timestamp (<30s)
+    Provider->>Provider: generowanie PAN, CVV, token
+    Provider-->>BE: 200 {card_token, full_pan, cvv, masked_pan, expiry_*}
+    BE->>DB: INSERT INTO cards (provider_token, masked_pan, ...)
+    DB-->>BE: Card ID
+    BE-->>FE: 200 OrderCardResponse {fullPan, cvv, ...}
+    FE-->>Klient: Modal "Karta wydana" (PAN/CVV jednorazowo)
+```
+Diagram pokazuje wydanie karty z perspektywy całego systemu. Kluczowa jest **walidacja autentyczności żądania** po stronie providera kart, oparta na podpisie HMAC-SHA256. Bank generuje podpis ze swojego sekretu HMAC, providera weryfikuje go używając tego samego klucza pobranego z bazy. Trzy nagłówki (`X-API-Key`, `X-Signature`, `X-Timestamp`) zapewniają: identyfikację banku, integralność body i ochronę przed atakami replay (timestamp musi być nie starszy niż 30 sekund). Po pomyślnym zwróceniu danych karty bank **trwale zapisuje** `provider_token` i `masked_pan`, ale pełen PAN i CVV przekazuje klientowi tylko **jednorazowo** w odpowiedzi — nigdy nie są zapisywane lokalnie (zgodnie z duchem PCI-DSS).
+
+#### 5.4.2 Płatność kartą — od POS do settlement w banku
+
+Najważniejszy flow biznesowy. Pokazuje rozróżnienie między autoryzacją (online u providera) a settlement (asynchroniczny webhook do banku z walidacją limitów).
+
+```mermaid
+sequenceDiagram
+    actor Klient
+    participant POS as POS Terminal
+    participant Provider as Cards Provider
+    participant ISO as Card Provider (ISO 8583)
+    participant Settle as Settlement Batch
+    participant Forward as ForwardFilter
+    participant BE as Backend Bank
+    participant DB as PostgreSQL
+
+    Klient->>POS: Wpisuje PAN, CVV, expiry, kwotę
+    POS->>Provider: POST /api/v1/payments/authorize
+    Provider->>ISO: Forward ISO 8583
+    ISO->>ISO: Walidacja (Luhn, status karty, expiry, CVV)
+    ISO-->>Provider: APPROVED
+    Provider-->>POS: APPROVED
+    POS-->>Klient: "APPROVED" na ekranie
+
+    Note over Provider,Settle: ~30s później — settlement batch
+    Settle->>BE: POST /capture {transaction_id, card_token, amount, ...}
+    BE->>Forward: dispatcher /capture
+    Forward->>BE: forward → /api/webhooks/cards/capture
+    BE->>DB: SELECT card BY provider_token
+    DB-->>BE: Card
+
+    alt Limit OK
+        BE->>BE: validateCardLimits(card, amount)
+        BE->>DB: UPDATE account SET balance -= amount
+        BE->>DB: INSERT transaction (status=COMPLETED, type=CARD_PAYMENT)
+        BE-->>Settle: 200 {status: SETTLED}
+    else Limit przekroczony
+        BE->>BE: validateCardLimits → IllegalStateException
+        BE->>DB: INSERT transaction (status=REJECTED) [REQUIRES_NEW]
+        Note over BE,DB: Audit trail — osobna transakcja, nie rollbackowana
+        BE-->>Settle: 400 (Limit exceeded)
+        Note over Settle: Provider widzi FAIL, transakcja nie księgowana
+    end
+```
+Najważniejszy diagram dla zrozumienia rozdziału **autoryzacji** od **rozliczenia**. Provider kart sprawdza autoryzację natychmiast, lokalnie, w komunikacie ISO 8583 (status karty, CVV, expiry) — POS dostaje APPROVED w sekundach. Bank dowiaduje się o transakcji dopiero po stronie settlementu, ok. 30s później, gdy batch wywołuje webhook `/capture`. W tym momencie bank dokonuje **dodatkowej walidacji**: limitów ustalonych przez klienta (transakcji + dziennego) i statusu blokady. Jeśli walidacja się uda — saldo jest obciążone, transakcja zapisana jako `COMPLETED`. Jeśli przekroczono limit — bank zwraca 400, transakcja **nie jest księgowana**, ale w historii klienta zapisywany jest **wpis audytowy** ze statusem `REJECTED` (w osobnej transakcji bazodanowej dzięki `REQUIRES_NEW`, niezależnie od rollbacku głównej operacji). Klient widzi w aplikacji informację że bank odrzucił płatność z konkretnym powodem.
+
+#### 5.4.3 Przelew z konta Junior — wymagana akceptacja rodzica
+
+Pokazuje mechanizm dwustopniowej autoryzacji: dziecko inicjuje przelew, rodzic akceptuje (lub odrzuca).
+
+```mermaid
+sequenceDiagram
+    actor Junior
+    actor Rodzic
+    participant FE as Frontend
+    participant BE as Backend Bank
+    participant DB as PostgreSQL
+
+    Junior->>FE: Wypełnia formularz przelewu
+    FE->>BE: POST /api/transactions/internal + JWT
+    BE->>DB: SELECT junior account
+    DB-->>BE: Account (type=JUNIOR, parentAccount)
+
+    BE->>BE: Walidacja PIN, salda, limitu
+    BE->>DB: INSERT transaction (status=PENDING_APPROVAL)
+    BE->>DB: INSERT pending_approval (parentUserId, transactionId)
+    Note over BE,DB: Środki niezablokowane — przelew "w poczekalni"
+    BE-->>FE: 200 {status: PENDING_APPROVAL}
+    FE-->>Junior: "Czeka na zatwierdzenie rodzica"
+
+    Note over Rodzic,FE: Później — rodzic loguje się
+    Rodzic->>FE: Wchodzi w "Oczekujące zatwierdzenia"
+    FE->>BE: GET /api/junior/pending-approvals + JWT
+    BE->>DB: SELECT pending WHERE parentUserId
+    DB-->>BE: List PendingApproval
+    BE-->>FE: 200 List
+    FE-->>Rodzic: Lista oczekujących
+
+    alt Rodzic akceptuje
+        Rodzic->>FE: Klika "Zatwierdź"
+        FE->>BE: POST /api/junior/pending-approvals/{id}/approve
+        BE->>DB: UPDATE junior balance -= amount
+        BE->>DB: UPDATE receiver balance += amount
+        BE->>DB: UPDATE transaction SET status=COMPLETED
+        BE->>DB: UPDATE pending_approval SET status=APPROVED, resolved_at=NOW
+        BE-->>FE: 200 "Zatwierdzono"
+    else Rodzic odrzuca
+        Rodzic->>FE: Klika "Odrzuć"
+        FE->>BE: POST /api/junior/pending-approvals/{id}/reject
+        BE->>DB: UPDATE transaction SET status=REJECTED
+        BE->>DB: UPDATE pending_approval SET status=REJECTED, resolved_at=NOW
+        Note over BE,DB: Saldo nigdy nie zostało dotknięte
+        BE-->>FE: 200 "Odrzucono"
+    end
+```
+Mechanizm **dwustopniowej autoryzacji** dla nieletnich klientów. Junior może w aplikacji wypełnić formularz przelewu wewnętrznego, ale system **nie wykonuje go od razu** — zamiast tego umieszcza transakcję w "poczekalni" (`PENDING_APPROVAL`) i tworzy odpowiadający rekord `PendingApproval` widoczny dla rodzica. Środki **nie są blokowane** na koncie Juniora — saldo zostaje nienaruszone do momentu decyzji rodzica. Rodzic w swojej aplikacji widzi listę oczekujących transakcji dzieci i może je zatwierdzić lub odrzucić jednym kliknięciem. Dopiero w momencie zatwierdzenia odbywa się rzeczywisty transfer środków. To realizacja wymagania z PDF: *"wszystkie transakcje z konta Junior muszą być zatwierdzone przez rodzica"*.
+
+#### 5.4.4 Doładowanie karty PREPAID Juniora
+
+Najbardziej złożony flow w module Junior — łączy provider, własne księgowanie i utworzenie transakcji w historii.
+
+```mermaid
+sequenceDiagram
+    actor Rodzic
+    participant FE as Frontend (ManageJunior)
+    participant BE as Backend Bank
+    participant Provider as Cards Provider
+    participant DB as PostgreSQL
+
+    Rodzic->>FE: Klika "Doładuj" → wpisuje 100 PLN
+    FE->>BE: POST /api/cards/{cardId}/topup {amount: 100}
+    BE->>DB: SELECT card, junior account, parent account
+    DB-->>BE: Card (type=PREPAID), Account (JUNIOR), Account (parent)
+
+    BE->>BE: Walidacja (PREPAID? saldo rodzica?)
+    BE->>Provider: POST /api/v1/cards/{token}/topup {amount: 100}
+    Provider->>Provider: UPDATE card balance += 100
+    Provider-->>BE: 200 {new_balance: 100}
+
+    BE->>DB: UPDATE parent_account balance -= 100
+    BE->>DB: UPDATE junior_account balance += 100
+    BE->>DB: INSERT transaction (type=CARD_TOPUP, COMPLETED)
+    Note over BE,DB: Sender = rodzic, Receiver = Junior
+    BE-->>FE: 200 {newCardBalance: 100}
+    FE-->>Rodzic: "Karta doładowana"
+
+    Note over Rodzic,DB: W historii widać po obu stronach:
+    Note over Rodzic,DB: Rodzic: -100 PLN "Doładowanie karty PREPAID (•••• 5091)"
+    Note over Rodzic,DB: Junior: +100 PLN "Doładowanie karty PREPAID ← imię rodzica"
+```
+Doładowanie karty prepaid pokazuje **koordynację dwóch systemów** (bank + provider) podczas jednej operacji biznesowej. Środki muszą być spójnie zaktualizowane po obu stronach: provider podnosi balance karty (żeby POS akceptował przyszłe płatności do tej kwoty), a bank wykonuje wewnętrzny przelew między kontami rodzica i Juniora (żeby przy kolejnym webhook settlementu konto Juniora miało skąd zostać obciążone). Operacja generuje **jedną** transakcję bankową typu `CARD_TOPUP` widoczną z perspektywy obu kont — rodzic widzi jej w historii jako wypływ (`-100 PLN`), Junior jako wpływ (`+100 PLN`). Maskowany numer karty w tytule pomaga klientowi szybko zidentyfikować której karty dotyczy doładowanie.
 
 ## 6. Architektura
 > **TODO:** wrzucenie pełnej architektury
