@@ -43,24 +43,6 @@ public class ExternalTransferService {
     @Value("${app.bank.elixir-account}")
     private String elixirAccount;
 
-    @Value("${app.bank.sorbnet.accounts.BANK_A:SORBNET-A-00000000000000000001}")
-    private String sorbnetBankA;
-
-    @Value("${app.bank.sorbnet.accounts.BANK_B:SORBNET-B-00000000000000000002}")
-    private String sorbnetBankB;
-
-    @Value("${app.bank.sorbnet.accounts.BANK_C:SORBNET-C-00000000000000000003}")
-    private String sorbnetBankC;
-
-    private String sorbnetAccountFor(String bicfi) {
-        return switch (bicfi) {
-            case "BANK_A" -> sorbnetBankA;
-            case "BANK_B" -> sorbnetBankB;
-            case "BANK_C" -> sorbnetBankC;
-            default -> throw new IllegalArgumentException("Brak konta SORBNET dla banku: " + bicfi);
-        };
-    }
-
     @Transactional
     public ExternalTransferResponse createTransfer(ExternalTransferRequest req, String userEmail) {
         User user = userRepository.findByEmail(userEmail).orElseThrow();
@@ -83,16 +65,12 @@ public class ExternalTransferService {
         senderAccount.setBlockedFunds(senderAccount.getBlockedFunds().add(req.amount()));
         accountRepository.save(senderAccount);
 
-        String receiverAccountForXml = "SORBNET".equals(req.routingSystem())
-                ? sorbnetAccountFor(req.receiverBankBicfi())
-                : req.receiverAccountNumber();
-
         ExternalTransfer transfer = ExternalTransfer.builder()
                 .externalPaymentId(externalPaymentId)
                 .senderAccount(senderAccount)
                 .senderAccountNumber(senderAccount.getAccountNumber())
                 .senderName(senderName)
-                .receiverAccountNumber(receiverAccountForXml)
+                .receiverAccountNumber(req.receiverAccountNumber())
                 .receiverName(req.receiverName())
                 .receiverBankBicfi(req.receiverBankBicfi())
                 .amount(req.amount())
@@ -115,7 +93,7 @@ public class ExternalTransferService {
                 senderBicfi,
                 req.receiverBankBicfi(),
                 senderIbanForXml,
-                receiverAccountForXml,
+                req.receiverAccountNumber(),
                 senderName,
                 req.receiverName(),
                 req.amount(),

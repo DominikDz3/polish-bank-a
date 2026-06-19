@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import axios from 'axios';
 import { api } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -12,6 +13,12 @@ interface AccountSummary {
 }
 
 type RoutingSystem = 'ELIXIR' | 'EXPRESS' | 'SORBNET';
+
+interface ErrorResponseData {
+  lockedUntil?: string;
+  detail?: string;
+  message?: string;
+}
 
 export default function ExternalTransfer() {
   const navigate = useNavigate();
@@ -72,9 +79,13 @@ export default function ExternalTransfer() {
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
+    const clean = receiverAccountNumber.replace(/\s+/g, '');
 
-    if (!isSorbnet) {
-      const clean = receiverAccountNumber.replace(/\s+/g, '');
+    if (isSorbnet) {
+      if (!/^SORBNET-[A-Z]-\d{20}$/.test(clean)) {
+        errors.receiverAccountNumber = "Konto SORBNET w formacie SORBNET-X-<20 cyfr>, np. SORBNET-B-00000000000000000002";
+      }
+    } else {
       if (!/^PL\d{26}$/.test(clean)) {
         errors.receiverAccountNumber = "IBAN musi być w formacie PL + 26 cyfr.";
       }
@@ -114,8 +125,9 @@ export default function ExternalTransfer() {
     setIsSubmitting(true);
 
     try {
-      const payload: Record<string, any> = {
+      const payload = {
         senderAccountId,
+        receiverAccountNumber: receiverAccountNumber.replace(/\s+/g, ''),
         receiverName,
         receiverBankBicfi,
         amount: parseFloat(amount),
@@ -123,9 +135,6 @@ export default function ExternalTransfer() {
         routingSystem,
         pin,
       };
-      if (!isSorbnet) {
-        payload.receiverAccountNumber = receiverAccountNumber.replace(/\s+/g, '');
-      }
 
       const res = await api.post('/api/transfers/external', payload);
 
@@ -147,15 +156,19 @@ export default function ExternalTransfer() {
       setFieldErrors({});
       setShowPinModal(false);
       setPin('');
-    } catch (err: any) {
-      const st = err.response?.status;
-      const data = err.response?.data;
-      if (st === 423 && data?.lockedUntil) {
-        setLockedUntil(new Date(data.lockedUntil));
-        setPin('');
-        setPinError(null);
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        const st = err.response?.status;
+        const data = err.response?.data as ErrorResponseData | undefined;
+        if (st === 423 && data?.lockedUntil) {
+          setLockedUntil(new Date(data.lockedUntil));
+          setPin('');
+          setPinError(null);
+        } else {
+          setPinError(data?.detail || data?.message || "Błąd realizacji przelewu.");
+        }
       } else {
-        setPinError(data?.detail || data?.message || "Błąd realizacji przelewu.");
+        setPinError("Błąd realizacji przelewu.");
       }
     } finally {
       setIsSubmitting(false);
@@ -256,22 +269,16 @@ export default function ExternalTransfer() {
               </p>
             </div>
 
-            {!isSorbnet && (
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1.5">IBAN odbiorcy</label>
-                <input type="text" value={receiverAccountNumber}
-                  onChange={(e) => setReceiverAccountNumber(e.target.value)}
-                  placeholder="PL12345678901234567890123456"
-                  className={`w-full bg-zinc-950 border ${fieldErrors.receiverAccountNumber ? 'border-red-500' : 'border-zinc-800'} rounded-xl px-4 py-3 text-white font-mono text-sm`} />
-                {fieldErrors.receiverAccountNumber && <p className="text-red-400 text-xs mt-1.5">{fieldErrors.receiverAccountNumber}</p>}
-              </div>
-            )}
-
-            {isSorbnet && (
-              <div className="bg-blue-500/10 border border-blue-500/20 text-blue-300 p-3 rounded-xl text-xs">
-                W SORBNET rozliczenie odbywa się między bankami — konto techniczne odbiorcy zostanie wybrane automatycznie na podstawie BICFI.
-              </div>
-            )}
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                {isSorbnet ? 'Konto techniczne odbiorcy (SORBNET)' : 'IBAN odbiorcy'}
+              </label>
+              <input type="text" value={receiverAccountNumber}
+                onChange={(e) => setReceiverAccountNumber(e.target.value)}
+                placeholder={isSorbnet ? 'SORBNET-B-00000000000000000002' : 'PL12345678901234567890123456'}
+                className={`w-full bg-zinc-950 border ${fieldErrors.receiverAccountNumber ? 'border-red-500' : 'border-zinc-800'} rounded-xl px-4 py-3 text-white font-mono text-sm`} />
+              {fieldErrors.receiverAccountNumber && <p className="text-red-400 text-xs mt-1.5">{fieldErrors.receiverAccountNumber}</p>}
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-zinc-400 mb-1.5">Nazwa odbiorcy</label>
