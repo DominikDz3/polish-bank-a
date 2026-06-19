@@ -15,7 +15,7 @@ import AddJunior from './pages/junior/AddJunior.tsx'
 import CardsPage from './pages/cards/CardsPage.tsx'
 import PendingApprovals from './pages/junior/PendingApprovals.tsx'
 import ManageJunior from './pages/junior/ManageJunior.tsx'
-
+import SwiftTransfer from './pages/SwiftTransfer.tsx'
 
 function App() {
   return (
@@ -39,7 +39,13 @@ function App() {
           <ProtectedRoute>
             <InternalTransfer />
           </ProtectedRoute>
+        } />
+        <Route path={ROUTES.SWIFT_TRANSFER} element={
+          <ProtectedRoute>
+            <SwiftTransfer />
+          </ProtectedRoute>
         }/>
+      
         <Route path={ROUTES.TRANSACTION_HISTORY} element={
           <ProtectedRoute>
             <TransactionHistory />
