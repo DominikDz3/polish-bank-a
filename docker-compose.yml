@@ -22,8 +22,9 @@ services:
       dockerfile: Dockerfile
     container_name: bank_a_backend
     ports:
-      - "8080:8080"
+      - "8080:8000"
     environment:
+      SERVER_PORT: 8000
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bank_a
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
@@ -37,12 +38,20 @@ services:
       BANK_BICFI: BANK_A
       BANK_SORBNET_ACCOUNT: SORBNET-A-00000000000000000001
       BANK_ELIXIR_ACCOUNT: ELIXIR-A-00000000000000000001
+      CARDS_GATEWAY_URL: ${CARDS_GATEWAY_URL}
+      CARDS_PROVIDER_API_KEY: ${CARDS_PROVIDER_API_KEY}
+      CARDS_PROVIDER_HMAC_SECRET: ${CARDS_PROVIDER_HMAC_SECRET}
+      CARDS_PROVIDER_BIN: ${CARDS_PROVIDER_BIN}
+      CARDS_PROVIDER_ADMIN_KEY: ${CARDS_PROVIDER_ADMIN_KEY}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - postgres
     networks:
-      - bank_network
+      bank_network:
+      cards-backend:
+        aliases:
+          - polish-bank-a
     restart: unless-stopped
 
   frontend:
@@ -67,3 +76,5 @@ volumes:
 networks:
   bank_network:
     driver: bridge
+  cards-backend:
+    external: true

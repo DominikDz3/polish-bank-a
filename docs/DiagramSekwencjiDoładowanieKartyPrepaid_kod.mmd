@@ -1,0 +1,27 @@
+sequenceDiagram
+    actor Rodzic
+    participant FE as Frontend (ManageJunior)
+    participant BE as Backend Bank
+    participant Provider as Cards Provider
+    participant DB as PostgreSQL
+
+    Rodzic->>FE: Klika "Doładuj" → wpisuje 100 PLN
+    FE->>BE: POST /api/cards/{cardId}/topup {amount: 100}
+    BE->>DB: SELECT card, junior account, parent account
+    DB-->>BE: Card (type=PREPAID), Account (JUNIOR), Account (parent)
+
+    BE->>BE: Walidacja (PREPAID? saldo rodzica?)
+    BE->>Provider: POST /api/v1/cards/{token}/topup {amount: 100}
+    Provider->>Provider: UPDATE card balance += 100
+    Provider-->>BE: 200 {new_balance: 100}
+
+    BE->>DB: UPDATE parent_account balance -= 100
+    BE->>DB: UPDATE junior_account balance += 100
+    BE->>DB: INSERT transaction (type=CARD_TOPUP, COMPLETED)
+    Note over BE,DB: Sender = rodzic, Receiver = Junior
+    BE-->>FE: 200 {newCardBalance: 100}
+    FE-->>Rodzic: "Karta doładowana"
+
+    Note over Rodzic,DB: W historii widać po obu stronach:
+    Note over Rodzic,DB: Rodzic: -100 PLN "Doładowanie karty PREPAID (•••• 5091)"
+    Note over Rodzic,DB: Junior: +100 PLN "Doładowanie karty PREPAID ← imię rodzica"
