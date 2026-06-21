@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_SWIFT" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.16.0">
+  <bpmn:collaboration id="Collaboration_SWIFT">
+    <bpmn:participant id="Participant_Klient" name="Klient" />
+    <bpmn:participant id="Participant_BankA" name="Bank A" processRef="Process_SWIFT" />
+    <bpmn:participant id="Participant_Middleware" name="SWIFT Middleware (wyznaczanie ścieżki + opłaty)" />
+    <bpmn:participant id="Participant_Corr1" name="Bank Korespondent 1" />
+    <bpmn:participant id="Participant_Corr2" name="Bank Korespondent 2" />
+    <bpmn:participant id="Participant_BankReceiver" name="Bank Odbiorcy" />
+    <bpmn:messageFlow id="MF_Init" name="POST /api/swift (PIN + JWT)" sourceRef="Participant_Klient" targetRef="StartEvent_Init" />
+    <bpmn:messageFlow id="MF_ToMiddleware" name="pacs.008 + UETR + chargeBearer" sourceRef="SendTask_Middleware" targetRef="Participant_Middleware" />
+    <bpmn:messageFlow id="MF_MwResp" name="route + fees + estimated_seconds / błąd 4xx" sourceRef="Participant_Middleware" targetRef="CatchEvent_MwResp" />
+    <bpmn:messageFlow id="MF_MwToCorr1" name="pacs.008 + ścieżka" sourceRef="Participant_Middleware" targetRef="Participant_Corr1" />
+    <bpmn:messageFlow id="MF_Corr1ToCorr2" name="pacs.008 (- opłata pośrednictwa)" sourceRef="Participant_Corr1" targetRef="Participant_Corr2" />
+    <bpmn:messageFlow id="MF_Corr2ToReceiver" name="pacs.008 (- opłata pośrednictwa)" sourceRef="Participant_Corr2" targetRef="Participant_BankReceiver" />
+    <bpmn:messageFlow id="MF_ReceiverConfirm" name="MT103 delivered / błąd 404/422" sourceRef="Participant_BankReceiver" targetRef="Participant_Middleware" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_SWIFT" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_BankA">
+      <bpmn:lane id="Lane_SwiftBackend" name="Backend SWIFT (Bank A)">
+        <bpmn:flowNodeRef>StartEvent_Init</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Validate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Junior</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_JuniorRej</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Exchange</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Balance</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_BalanceRej</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Prepare</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_OAuth</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>SendTask_Middleware</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>CatchEvent_MwResp</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Response</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Apply</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Sent</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Return</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Returned</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_Init" name="Klient zlecił przelew SWIFT">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_Init" />
+    </bpmn:startEvent>
+    <bpmn:task id="Task_Validate" name="Walidacja PIN i uprawnień do konta">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Junior" name="Konto Junior?">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_JuniorNo</bpmn:outgoing>
+      <bpmn:outgoing>Flow_JuniorYes</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="EndEvent_JuniorRej" name="Odrzucono: Junior nie może SWIFT">
+      <bpmn:incoming>Flow_JuniorYes</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Exchange" name="Pobierz kurs i przelicz debitAmount na walutę konta">
+      <bpmn:incoming>Flow_JuniorNo</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Balance" name="Saldo wystarcza?">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_BalanceOk</bpmn:outgoing>
+      <bpmn:outgoing>Flow_BalanceBad</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="EndEvent_BalanceRej" name="Odrzucono: braki środków">
+      <bpmn:incoming>Flow_BalanceBad</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Prepare" name="Generuj pacs.008 z UETR, zapis Transaction i SwiftTransfer, obciążenie konta">
+      <bpmn:incoming>Flow_BalanceOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_OAuth" name="Pobierz token OAuth z middleware">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sendTask id="SendTask_Middleware" name="Wyślij pacs.008 do middleware SWIFT">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:intermediateCatchEvent id="CatchEvent_MwResp" name="Odpowiedź middleware">
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_MwResp" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:exclusiveGateway id="Gateway_Response" name="Sukces?">
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+      <bpmn:outgoing>Flow_RespOk</bpmn:outgoing>
+      <bpmn:outgoing>Flow_RespBad</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Apply" name="Apply route, fees, estimated_seconds, status IN_TRANSIT">
+      <bpmn:incoming>Flow_RespOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Sent" name="Przelew w drodze">
+      <bpmn:incoming>Flow_8</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Return" name="Zwrot środków, status RETURNED, returnReason">
+      <bpmn:incoming>Flow_RespBad</bpmn:incoming>
+      <bpmn:outgoing>Flow_9</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Returned" name="Przelew zwrócony">
+      <bpmn:incoming>Flow_9</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_Init" targetRef="Task_Validate" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Validate" targetRef="Gateway_Junior" />
+    <bpmn:sequenceFlow id="Flow_JuniorNo" name="NIE" sourceRef="Gateway_Junior" targetRef="Task_Exchange" />
+    <bpmn:sequenceFlow id="Flow_JuniorYes" name="TAK" sourceRef="Gateway_Junior" targetRef="EndEvent_JuniorRej" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_Exchange" targetRef="Gateway_Balance" />
+    <bpmn:sequenceFlow id="Flow_BalanceOk" name="TAK" sourceRef="Gateway_Balance" targetRef="Task_Prepare" />
+    <bpmn:sequenceFlow id="Flow_BalanceBad" name="NIE" sourceRef="Gateway_Balance" targetRef="EndEvent_BalanceRej" />
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_Prepare" targetRef="Task_OAuth" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_OAuth" targetRef="SendTask_Middleware" />
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="SendTask_Middleware" targetRef="CatchEvent_MwResp" />
+    <bpmn:sequenceFlow id="Flow_7" sourceRef="CatchEvent_MwResp" targetRef="Gateway_Response" />
+    <bpmn:sequenceFlow id="Flow_RespOk" name="200 + UETR" sourceRef="Gateway_Response" targetRef="Task_Apply" />
+    <bpmn:sequenceFlow id="Flow_RespBad" name="4xx" sourceRef="Gateway_Response" targetRef="Task_Return" />
+    <bpmn:sequenceFlow id="Flow_8" sourceRef="Task_Apply" targetRef="EndEvent_Sent" />
+    <bpmn:sequenceFlow id="Flow_9" sourceRef="Task_Return" targetRef="EndEvent_Returned" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_SWIFT">
+      <bpmndi:BPMNShape id="Participant_Klient_di" bpmnElement="Participant_Klient" isHorizontal="true">
+        <dc:Bounds x="155" y="80" width="2000" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_BankA_di" bpmnElement="Participant_BankA" isHorizontal="true">
+        <dc:Bounds x="155" y="160" width="2000" height="440" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_SwiftBackend_di" bpmnElement="Lane_SwiftBackend" isHorizontal="true">
+        <dc:Bounds x="185" y="160" width="1970" height="440" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_Init_di" bpmnElement="StartEvent_Init">
+        <dc:Bounds x="220" y="342" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="214" y="385" width="51" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Validate_di" bpmnElement="Task_Validate">
+        <dc:Bounds x="290" y="320" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Junior_di" bpmnElement="Gateway_Junior" isMarkerVisible="true">
+        <dc:Bounds x="460" y="335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="454" y="305" width="68" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_JuniorRej_di" bpmnElement="EndEvent_JuniorRej">
+        <dc:Bounds x="467" y="462" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="440" y="505" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Exchange_di" bpmnElement="Task_Exchange">
+        <dc:Bounds x="540" y="320" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Balance_di" bpmnElement="Gateway_Balance" isMarkerVisible="true">
+        <dc:Bounds x="735" y="335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="722" y="305" width="87" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_BalanceRej_di" bpmnElement="EndEvent_BalanceRej">
+        <dc:Bounds x="742" y="462" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="718" y="505" width="84" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Prepare_di" bpmnElement="Task_Prepare">
+        <dc:Bounds x="815" y="320" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_OAuth_di" bpmnElement="Task_OAuth">
+        <dc:Bounds x="1045" y="320" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SendTask_Middleware_di" bpmnElement="SendTask_Middleware">
+        <dc:Bounds x="1235" y="320" width="180" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CatchEvent_MwResp_di" bpmnElement="CatchEvent_MwResp">
+        <dc:Bounds x="1445" y="342" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1435" y="306" width="57" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Response_di" bpmnElement="Gateway_Response" isMarkerVisible="true">
+        <dc:Bounds x="1510" y="335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1568" y="353" width="43" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Apply_di" bpmnElement="Task_Apply">
+        <dc:Bounds x="1610" y="230" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Sent_di" bpmnElement="EndEvent_Sent">
+        <dc:Bounds x="1840" y="252" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1815" y="295" width="87" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Return_di" bpmnElement="Task_Return">
+        <dc:Bounds x="1610" y="440" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Returned_di" bpmnElement="EndEvent_Returned">
+        <dc:Bounds x="1840" y="462" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1816" y="505" width="89" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="256" y="360" />
+        <di:waypoint x="290" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="430" y="360" />
+        <di:waypoint x="460" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_JuniorNo_di" bpmnElement="Flow_JuniorNo">
+        <di:waypoint x="510" y="360" />
+        <di:waypoint x="540" y="360" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="516" y="342" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_JuniorYes_di" bpmnElement="Flow_JuniorYes">
+        <di:waypoint x="485" y="385" />
+        <di:waypoint x="485" y="462" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="494" y="410" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
+        <di:waypoint x="710" y="360" />
+        <di:waypoint x="735" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_BalanceOk_di" bpmnElement="Flow_BalanceOk">
+        <di:waypoint x="785" y="360" />
+        <di:waypoint x="815" y="360" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="791" y="342" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_BalanceBad_di" bpmnElement="Flow_BalanceBad">
+        <di:waypoint x="760" y="385" />
+        <di:waypoint x="760" y="462" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="769" y="410" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4">
+        <di:waypoint x="1015" y="360" />
+        <di:waypoint x="1045" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5">
+        <di:waypoint x="1205" y="360" />
+        <di:waypoint x="1235" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_6_di" bpmnElement="Flow_6">
+        <di:waypoint x="1415" y="360" />
+        <di:waypoint x="1445" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_7_di" bpmnElement="Flow_7">
+        <di:waypoint x="1481" y="360" />
+        <di:waypoint x="1510" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_RespOk_di" bpmnElement="Flow_RespOk">
+        <di:waypoint x="1535" y="335" />
+        <di:waypoint x="1535" y="270" />
+        <di:waypoint x="1610" y="270" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1544" y="285" width="61" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_RespBad_di" bpmnElement="Flow_RespBad">
+        <di:waypoint x="1535" y="385" />
+        <di:waypoint x="1535" y="480" />
+        <di:waypoint x="1610" y="480" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1549" y="430" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_8_di" bpmnElement="Flow_8">
+        <di:waypoint x="1810" y="270" />
+        <di:waypoint x="1840" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_9_di" bpmnElement="Flow_9">
+        <di:waypoint x="1810" y="480" />
+        <di:waypoint x="1840" y="480" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_Middleware_di" bpmnElement="Participant_Middleware" isHorizontal="true">
+        <dc:Bounds x="155" y="640" width="2000" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_Corr1_di" bpmnElement="Participant_Corr1" isHorizontal="true">
+        <dc:Bounds x="155" y="730" width="2000" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_Corr2_di" bpmnElement="Participant_Corr2" isHorizontal="true">
+        <dc:Bounds x="155" y="820" width="2000" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_BankReceiver_di" bpmnElement="Participant_BankReceiver" isHorizontal="true">
+        <dc:Bounds x="155" y="910" width="2000" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="MF_Init_di" bpmnElement="MF_Init">
+        <di:waypoint x="238" y="140" />
+        <di:waypoint x="238" y="342" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="250" y="220" width="140" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_ToMiddleware_di" bpmnElement="MF_ToMiddleware">
+        <di:waypoint x="1325" y="400" />
+        <di:waypoint x="1325" y="640" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1198" y="496" width="104" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_MwResp_di" bpmnElement="MF_MwResp">
+        <di:waypoint x="1463" y="640" />
+        <di:waypoint x="1463" y="378" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1371" y="490" width="78" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_MwToCorr1_di" bpmnElement="MF_MwToCorr1">
+        <di:waypoint x="900" y="700" />
+        <di:waypoint x="900" y="730" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="943" y="703" width="94" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_Corr1ToCorr2_di" bpmnElement="MF_Corr1ToCorr2">
+        <di:waypoint x="1100" y="790" />
+        <di:waypoint x="1100" y="820" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1110" y="793" width="160" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_Corr2ToReceiver_di" bpmnElement="MF_Corr2ToReceiver">
+        <di:waypoint x="1300" y="880" />
+        <di:waypoint x="1300" y="910" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1350" y="883" width="160" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_ReceiverConfirm_di" bpmnElement="MF_ReceiverConfirm">
+        <di:waypoint x="1700" y="910" />
+        <di:waypoint x="1700" y="700" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1532" y="795" width="155" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

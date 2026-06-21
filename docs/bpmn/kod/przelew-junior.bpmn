@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_Junior" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.16.0">
+  <bpmn:collaboration id="Collaboration_Junior">
+    <bpmn:participant id="Participant_BankA" name="Bank A" processRef="Process_JuniorApproval" />
+    <bpmn:participant id="Participant_Junior" name="Junior (dziecko)" />
+    <bpmn:participant id="Participant_Rodzic" name="Rodzic" />
+    <bpmn:messageFlow id="MF_Init" name="POST /api/transactions/internal + JWT Juniora" sourceRef="Participant_Junior" targetRef="StartEvent_Init" />
+    <bpmn:messageFlow id="MF_Push" name="Push: Junior chce przelać X PLN" sourceRef="ThrowEvent_Push" targetRef="Participant_Rodzic" />
+    <bpmn:messageFlow id="MF_Decision" name="POST /approve lub /reject" sourceRef="Participant_Rodzic" targetRef="CatchEvent_Decision" />
+    <bpmn:messageFlow id="MF_NotifyDone" name="Powiadomienie: zatwierdzone" sourceRef="EndEvent_Completed" targetRef="Participant_Junior" />
+    <bpmn:messageFlow id="MF_NotifyRej" name="Powiadomienie: odrzucone" sourceRef="EndEvent_Rejected" targetRef="Participant_Junior" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_JuniorApproval" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_BankA">
+      <bpmn:lane id="Lane_Backend" name="Backend (API + Persistence)">
+        <bpmn:flowNodeRef>StartEvent_Init</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Validate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SaveTx</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SavePA</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ThrowEvent_Push</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>CatchEvent_Decision</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Decision</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Execute</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_MarkReject</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Completed</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Rejected</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_Init" name="Otrzymano zlecenie przelewu od Juniora">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_Init" />
+    </bpmn:startEvent>
+    <bpmn:task id="Task_Validate" name="Walidacja PIN Juniora, salda i limitu">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_SaveTx" name="Zapis Transaction ze statusem PENDING_APPROVAL (saldo niezmienione)">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_SavePA" name="Utworzenie rekordu PendingApproval powiązanego z rodzicem">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:intermediateThrowEvent id="ThrowEvent_Push" name="Push notification do rodzica">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_Push" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:intermediateCatchEvent id="CatchEvent_Decision" name="Odbiór decyzji rodzica">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_Decision" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:exclusiveGateway id="Gateway_Decision" name="Decyzja rodzica?">
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approve</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Reject</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Execute" name="Obciążenie konta Juniora, uznanie odbiorcy, status COMPLETED">
+      <bpmn:incoming>Flow_Approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_MarkReject" name="Oznaczenie Transaction jako REJECTED (saldo bez zmian)">
+      <bpmn:incoming>Flow_Reject</bpmn:incoming>
+      <bpmn:outgoing>Flow_8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Completed" name="Transakcja COMPLETED">
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="EndEvent_Rejected" name="Transakcja REJECTED">
+      <bpmn:incoming>Flow_8</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_Init" targetRef="Task_Validate" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Validate" targetRef="Task_SaveTx" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_SaveTx" targetRef="Task_SavePA" />
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_SavePA" targetRef="ThrowEvent_Push" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="ThrowEvent_Push" targetRef="CatchEvent_Decision" />
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="CatchEvent_Decision" targetRef="Gateway_Decision" />
+    <bpmn:sequenceFlow id="Flow_Approve" name="ZATWIERDŹ" sourceRef="Gateway_Decision" targetRef="Task_Execute" />
+    <bpmn:sequenceFlow id="Flow_Reject" name="ODRZUĆ" sourceRef="Gateway_Decision" targetRef="Task_MarkReject" />
+    <bpmn:sequenceFlow id="Flow_7" sourceRef="Task_Execute" targetRef="EndEvent_Completed" />
+    <bpmn:sequenceFlow id="Flow_8" sourceRef="Task_MarkReject" targetRef="EndEvent_Rejected" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_Junior">
+      <bpmndi:BPMNShape id="Participant_BankA_di" bpmnElement="Participant_BankA" isHorizontal="true">
+        <dc:Bounds x="130" y="160" width="1425" height="380" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Backend_di" bpmnElement="Lane_Backend" isHorizontal="true">
+        <dc:Bounds x="160" y="160" width="1395" height="380" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_Init_di" bpmnElement="StartEvent_Init">
+        <dc:Bounds x="220" y="292" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="194" y="335" width="88" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Validate_di" bpmnElement="Task_Validate">
+        <dc:Bounds x="290" y="270" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SaveTx_di" bpmnElement="Task_SaveTx">
+        <dc:Bounds x="450" y="270" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SavePA_di" bpmnElement="Task_SavePA">
+        <dc:Bounds x="640" y="270" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ThrowEvent_Push_di" bpmnElement="ThrowEvent_Push">
+        <dc:Bounds x="830" y="292" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="810" y="246" width="81" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CatchEvent_Decision_di" bpmnElement="CatchEvent_Decision">
+        <dc:Bounds x="900" y="292" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="895" y="253" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Decision_di" bpmnElement="Gateway_Decision" isMarkerVisible="true">
+        <dc:Bounds x="970" y="285" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1038" y="303" width="84" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Execute_di" bpmnElement="Task_Execute">
+        <dc:Bounds x="1080" y="190" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_MarkReject_di" bpmnElement="Task_MarkReject">
+        <dc:Bounds x="1080" y="390" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Completed_di" bpmnElement="EndEvent_Completed">
+        <dc:Bounds x="1290" y="212" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1275" y="255" width="69" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Rejected_di" bpmnElement="EndEvent_Rejected">
+        <dc:Bounds x="1290" y="412" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1280" y="455" width="59" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="256" y="310" />
+        <di:waypoint x="290" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="420" y="310" />
+        <di:waypoint x="450" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
+        <di:waypoint x="610" y="310" />
+        <di:waypoint x="640" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4">
+        <di:waypoint x="800" y="310" />
+        <di:waypoint x="830" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5">
+        <di:waypoint x="866" y="310" />
+        <di:waypoint x="900" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_6_di" bpmnElement="Flow_6">
+        <di:waypoint x="936" y="310" />
+        <di:waypoint x="970" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Approve_di" bpmnElement="Flow_Approve">
+        <di:waypoint x="995" y="285" />
+        <di:waypoint x="995" y="230" />
+        <di:waypoint x="1080" y="230" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1006" y="240" width="64" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Reject_di" bpmnElement="Flow_Reject">
+        <di:waypoint x="995" y="335" />
+        <di:waypoint x="995" y="430" />
+        <di:waypoint x="1080" y="430" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1009" y="405" width="48" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_7_di" bpmnElement="Flow_7">
+        <di:waypoint x="1250" y="230" />
+        <di:waypoint x="1290" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_8_di" bpmnElement="Flow_8">
+        <di:waypoint x="1250" y="430" />
+        <di:waypoint x="1290" y="430" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_Junior_di" bpmnElement="Participant_Junior" isHorizontal="true">
+        <dc:Bounds x="130" y="80" width="1425" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_Rodzic_di" bpmnElement="Participant_Rodzic" isHorizontal="true">
+        <dc:Bounds x="130" y="580" width="1425" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="MF_Init_di" bpmnElement="MF_Init">
+        <di:waypoint x="238" y="140" />
+        <di:waypoint x="238" y="292" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="166" y="195" width="188" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_Push_di" bpmnElement="MF_Push">
+        <di:waypoint x="848" y="328" />
+        <di:waypoint x="848" y="580" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="742" y="466" width="115" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_Decision_di" bpmnElement="MF_Decision">
+        <di:waypoint x="918" y="580" />
+        <di:waypoint x="918" y="328" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="926" y="485" width="127" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_NotifyDone_di" bpmnElement="MF_NotifyDone">
+        <di:waypoint x="1308" y="212" />
+        <di:waypoint x="1308" y="140" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1337" y="213" width="146" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_NotifyRej_di" bpmnElement="MF_NotifyRej">
+        <di:waypoint x="1308" y="412" />
+        <di:waypoint x="1308" y="140" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1343" y="433" width="133" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

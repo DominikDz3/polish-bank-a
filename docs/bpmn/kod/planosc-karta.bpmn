@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_CardPayment" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.16.0">
+  <bpmn:collaboration id="Collaboration_CardPayment">
+    <bpmn:participant id="Participant_Cardholder" name="Cardholder (posiadacz karty)" />
+    <bpmn:participant id="Participant_POS" name="Terminal POS" />
+    <bpmn:participant id="Participant_Provider" name="Cards Provider" />
+    <bpmn:participant id="Participant_BankA" name="Bank A" processRef="Process_CardCapture" />
+    <bpmn:messageFlow id="MF_PayDetails" name="PAN, CVV, expiry, kwota" sourceRef="Participant_Cardholder" targetRef="Participant_POS" />
+    <bpmn:messageFlow id="MF_AuthReq" name="ISO 8583 authorize" sourceRef="Participant_POS" targetRef="Participant_Provider" />
+    <bpmn:messageFlow id="MF_AuthResp" name="APPROVED / DECLINED" sourceRef="Participant_Provider" targetRef="Participant_POS" />
+    <bpmn:messageFlow id="MF_PosResult" name="Wyświetl wynik na ekranie" sourceRef="Participant_POS" targetRef="Participant_Cardholder" />
+    <bpmn:messageFlow id="MF_Webhook" name="POST /capture (HMAC, ~30s później)" sourceRef="Participant_Provider" targetRef="StartEvent_Capture" />
+    <bpmn:messageFlow id="MF_RespIdem" name="Cached response (idempotent)" sourceRef="EndEvent_Idempotent" targetRef="Participant_Provider" />
+    <bpmn:messageFlow id="MF_RespOk" name="HTTP 200 SETTLED" sourceRef="EndEvent_Settled" targetRef="Participant_Provider" />
+    <bpmn:messageFlow id="MF_RespBad" name="HTTP 400 Limit exceeded" sourceRef="EndEvent_LimitExc" targetRef="Participant_Provider" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_CardCapture" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_BankA">
+      <bpmn:lane id="Lane_Webhook" name="Webhook handler + księgowanie">
+        <bpmn:flowNodeRef>StartEvent_Capture</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_LookupCard</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Idempotency</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Idempotent</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Validate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Limits</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Settle</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Audit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Settled</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_LimitExc</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_Capture" name="Webhook /capture od providera">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_Capture" />
+    </bpmn:startEvent>
+    <bpmn:task id="Task_LookupCard" name="Wyszukanie karty po provider_token">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Idempotency" name="external_transaction_id już widziany?">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_IdemYes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_IdemNo</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="EndEvent_Idempotent" name="Zwrot zapisanej odpowiedzi (idempotent)">
+      <bpmn:incoming>Flow_IdemYes</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Validate" name="Walidacja limitów karty: transakcji, dziennego i statusu blokady">
+      <bpmn:incoming>Flow_IdemNo</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Limits" name="Limity OK?">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_LimitsOk</bpmn:outgoing>
+      <bpmn:outgoing>Flow_LimitsBad</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Settle" name="Obciążenie konta klienta, zapis Transaction COMPLETED typu CARD_PAYMENT">
+      <bpmn:incoming>Flow_LimitsOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Audit" name="Audit-trail w osobnej transakcji (REQUIRES_NEW): Transaction REJECTED typu CARD_PAYMENT_REJECTED">
+      <bpmn:incoming>Flow_LimitsBad</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Settled" name="HTTP 200 SETTLED">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="EndEvent_LimitExc" name="HTTP 400 Limit exceeded">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_Capture" targetRef="Task_LookupCard" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_LookupCard" targetRef="Gateway_Idempotency" />
+    <bpmn:sequenceFlow id="Flow_IdemYes" name="TAK" sourceRef="Gateway_Idempotency" targetRef="EndEvent_Idempotent" />
+    <bpmn:sequenceFlow id="Flow_IdemNo" name="NIE" sourceRef="Gateway_Idempotency" targetRef="Task_Validate" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_Validate" targetRef="Gateway_Limits" />
+    <bpmn:sequenceFlow id="Flow_LimitsOk" name="TAK" sourceRef="Gateway_Limits" targetRef="Task_Settle" />
+    <bpmn:sequenceFlow id="Flow_LimitsBad" name="NIE" sourceRef="Gateway_Limits" targetRef="Task_Audit" />
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_Settle" targetRef="EndEvent_Settled" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_Audit" targetRef="EndEvent_LimitExc" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_CardPayment">
+      <bpmndi:BPMNShape id="Participant_Cardholder_di" bpmnElement="Participant_Cardholder" isHorizontal="true">
+        <dc:Bounds x="275" y="80" width="1500" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_POS_di" bpmnElement="Participant_POS" isHorizontal="true">
+        <dc:Bounds x="275" y="160" width="1500" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_Provider_di" bpmnElement="Participant_Provider" isHorizontal="true">
+        <dc:Bounds x="275" y="240" width="1500" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_BankA_di" bpmnElement="Participant_BankA" isHorizontal="true">
+        <dc:Bounds x="275" y="330" width="1500" height="400" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Webhook_di" bpmnElement="Lane_Webhook" isHorizontal="true">
+        <dc:Bounds x="305" y="330" width="1470" height="400" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_Capture_di" bpmnElement="StartEvent_Capture">
+        <dc:Bounds x="340" y="492" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="332" y="535" width="55" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_LookupCard_di" bpmnElement="Task_LookupCard">
+        <dc:Bounds x="410" y="470" width="150" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Idempotency_di" bpmnElement="Gateway_Idempotency" isMarkerVisible="true">
+        <dc:Bounds x="595" y="485" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="579" y="436" width="93" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Idempotent_di" bpmnElement="EndEvent_Idempotent">
+        <dc:Bounds x="602" y="632" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="552" y="675" width="136" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Validate_di" bpmnElement="Task_Validate">
+        <dc:Bounds x="690" y="470" width="180" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Limits_di" bpmnElement="Gateway_Limits" isMarkerVisible="true">
+        <dc:Bounds x="910" y="485" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="973" y="503" width="54" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Settle_di" bpmnElement="Task_Settle">
+        <dc:Bounds x="1020" y="370" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Audit_di" bpmnElement="Task_Audit">
+        <dc:Bounds x="1020" y="600" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Settled_di" bpmnElement="EndEvent_Settled">
+        <dc:Bounds x="1270" y="392" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1264" y="435" width="51" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_LimitExc_di" bpmnElement="EndEvent_LimitExc">
+        <dc:Bounds x="1270" y="622" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1252" y="665" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="376" y="510" />
+        <di:waypoint x="410" y="510" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="560" y="510" />
+        <di:waypoint x="595" y="510" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IdemYes_di" bpmnElement="Flow_IdemYes">
+        <di:waypoint x="620" y="535" />
+        <di:waypoint x="620" y="632" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="630" y="570" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IdemNo_di" bpmnElement="Flow_IdemNo">
+        <di:waypoint x="645" y="510" />
+        <di:waypoint x="690" y="510" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="659" y="492" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
+        <di:waypoint x="870" y="510" />
+        <di:waypoint x="910" y="510" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_LimitsOk_di" bpmnElement="Flow_LimitsOk">
+        <di:waypoint x="935" y="485" />
+        <di:waypoint x="935" y="410" />
+        <di:waypoint x="1020" y="410" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="945" y="433" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_LimitsBad_di" bpmnElement="Flow_LimitsBad">
+        <di:waypoint x="935" y="535" />
+        <di:waypoint x="935" y="640" />
+        <di:waypoint x="1020" y="640" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="946" y="585" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4">
+        <di:waypoint x="1220" y="410" />
+        <di:waypoint x="1270" y="410" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5">
+        <di:waypoint x="1220" y="640" />
+        <di:waypoint x="1270" y="640" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_PayDetails_di" bpmnElement="MF_PayDetails">
+        <di:waypoint x="440" y="140" />
+        <di:waypoint x="440" y="160" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="465" y="143" width="120" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_AuthReq_di" bpmnElement="MF_AuthReq">
+        <di:waypoint x="540" y="220" />
+        <di:waypoint x="540" y="240" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="432" y="223" width="95" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_AuthResp_di" bpmnElement="MF_AuthResp">
+        <di:waypoint x="620" y="240" />
+        <di:waypoint x="620" y="220" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="637" y="223" width="126" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_PosResult_di" bpmnElement="MF_PosResult">
+        <di:waypoint x="720" y="160" />
+        <di:waypoint x="720" y="140" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="751" y="143" width="129" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_Webhook_di" bpmnElement="MF_Webhook">
+        <di:waypoint x="358" y="300" />
+        <di:waypoint x="358" y="492" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="368" y="383" width="184" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_RespIdem_di" bpmnElement="MF_RespIdem">
+        <di:waypoint x="620" y="668" />
+        <di:waypoint x="220" y="668" />
+        <di:waypoint x="220" y="270" />
+        <di:waypoint x="275" y="270" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="157" y="455" width="87" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_RespOk_di" bpmnElement="MF_RespOk">
+        <di:waypoint x="1288" y="392" />
+        <di:waypoint x="1288" y="300" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1309" y="335" width="103" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_RespBad_di" bpmnElement="MF_RespBad">
+        <di:waypoint x="1288" y="622" />
+        <di:waypoint x="1360" y="622" />
+        <di:waypoint x="1360" y="300" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1381" y="455" width="128" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
