@@ -54,6 +54,17 @@ function formatAmount(amount: number, currency: string, direction: string): stri
   return direction === 'INCOMING' ? `+${formatted}` : `-${formatted}`;
 }
 
+function mapExternalStatus(s: string): string {
+  switch (s) {
+    case 'PROCESSED': return 'COMPLETED';
+    case 'SENT':
+    case 'INITIATED':
+    case 'GRIDLOCK_HELD': return 'PENDING';
+    case 'REJECTED': return 'REJECTED';
+    default: return s;
+  }
+}
+
 export default function TransactionHistory() {
   const { accountId } = useParams<{ accountId: string }>();
   const navigate = useNavigate();
@@ -68,12 +79,53 @@ export default function TransactionHistory() {
   };
 
 
-  useEffect(() => {
-    api.get(`/api/transactions/history/${accountId}`)
-      .then(res => setTransactions(res.data))
-      .catch(() => setError('Nie udało się pobrać historii transakcji.'))
-      .finally(() => setLoading(false));
-  }, [accountId]);
+useEffect(() => {
+  const fetchAll = async () => {
+    try {
+      const [internalRes, externalRes] = await Promise.all([
+        api.get(`/api/transactions/history/${accountId}`),
+        api.get(`/api/transfers/external/account/${accountId}`),
+      ]);
+
+      const external: Transaction[] = (externalRes.data || []).map((t: {
+        id: string;
+        senderAccountNumber: string;
+        receiverAccountNumber: string;
+        receiverName: string | null;
+        title: string | null;
+        amount: number;
+        currency: string;
+        status: string;
+        routingSystem: string;
+        createdAt: string;
+        settledAt: string | null;
+      }) => ({
+        id: t.id,
+        senderAccountNumber: t.senderAccountNumber,
+        receiverAccountNumber: t.receiverAccountNumber,
+        receiverName: t.receiverName,
+        title: t.title,
+        amount: t.amount,
+        currency: t.currency,
+        status: mapExternalStatus(t.status),
+        type: t.routingSystem,
+        createdAt: t.createdAt,
+        executionDate: t.settledAt,
+        direction: 'OUTGOING',
+      }));
+
+      const all = [...(internalRes.data || []), ...external].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setTransactions(all);
+    } catch {
+      setError('Nie udało się pobrać historii transakcji.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  fetchAll();
+}, [accountId]);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">

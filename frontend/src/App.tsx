@@ -16,6 +16,11 @@ import CardsPage from './pages/cards/CardsPage.tsx'
 import PendingApprovals from './pages/junior/PendingApprovals.tsx'
 import ManageJunior from './pages/junior/ManageJunior.tsx'
 import SwiftTransfer from './pages/SwiftTransfer.tsx'
+import ExternalTransfer from './pages/auth/ExternalTransfer.tsx'
+import KlikP2PTransfer from './pages/KlikP2PTransfer.tsx'
+import Settings from './pages/Settings.tsx'
+
+
 
 function App() {
   return (
@@ -78,6 +83,24 @@ function App() {
         <Route path={ROUTES.MANAGE_JUNIOR} element={
           <ProtectedRoute>
             <ManageJunior />
+          </ProtectedRoute>
+        } />
+
+        <Route path={ROUTES.EXTERNAL_TRANSFER} element={
+          <ProtectedRoute>
+            <ExternalTransfer />
+          </ProtectedRoute>
+        }/>
+
+        <Route path={ROUTES.KLIK_P2P} element={
+          <ProtectedRoute>
+            <KlikP2PTransfer />
+          </ProtectedRoute>
+        } />
+
+        <Route path={ROUTES.SETTINGS} element={
+          <ProtectedRoute>
+            <Settings />
           </ProtectedRoute>
         } />
       </Routes>
