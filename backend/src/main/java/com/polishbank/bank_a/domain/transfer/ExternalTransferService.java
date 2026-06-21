@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.polishbank.bank_a.domain.aml.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,6 +34,8 @@ public class ExternalTransferService {
     private final ElixirClient elixirClient;
     private final ExpressElixirClient expressClient;
     private final SorbnetClient sorbnetClient;
+    private final AmlEvaluator amlEvaluator;
+    private final AmlHoldCreator amlHoldCreator;
 
     @Value("${app.bank.bicfi}")
     private String senderBicfi;
@@ -80,6 +83,25 @@ public class ExternalTransferService {
                 .status("INITIATED")
                 .build();
         transferRepository.save(transfer);
+
+        AmlResult eval = amlEvaluator.evaluate(new AmlContext(
+            user.getId(),
+            senderAccount.getId(),
+            req.amount(),
+            senderAccount.getCurrency(),
+            AmlTransactionType.EXTERNAL,
+            req.title(),
+            req.receiverAccountNumber(),
+            null
+        ));
+        if (eval.hold()) {
+            transfer.setStatus("HELD_FOR_AML");
+            transferRepository.save(transfer);
+            amlHoldCreator.create(user, senderAccount, AmlTransactionType.EXTERNAL,
+                    null, transfer, null, eval, req.amount(), senderAccount.getCurrency(),
+                    req.receiverAccountNumber());
+            return toResponse(transfer);
+        }
 
         String senderIbanForXml = switch (req.routingSystem()) {
             case "SORBNET" -> sorbnetAccount;
@@ -214,5 +236,78 @@ public class ExternalTransferService {
             case "SORBNET" -> "SORBNET";
             default -> "ELIXIR";
         };
+    }
+
+    @Transactional
+public void finalizeAfterAml(UUID transferId) {
+    ExternalTransfer transfer = transferRepository.findById(transferId)
+            .orElseThrow(() -> new IllegalArgumentException("Przelew nie istnieje."));
+    if (!"HELD_FOR_AML".equals(transfer.getStatus())) {
+        throw new IllegalStateException("Przelew nie jest w stanie HELD_FOR_AML.");
+    }
+    Account senderAccount = transfer.getSenderAccount();
+    String senderName = transfer.getSenderName();
+
+    String senderIbanForXml = switch (transfer.getRoutingSystem()) {
+        case "SORBNET" -> sorbnetAccount;
+        case "ELIXIR" -> elixirAccount;
+        default -> senderAccount.getAccountNumber();
+    };
+    String xml = IsoXml.buildPacs008(
+            transfer.getExternalPaymentId(),
+            senderBicfi, transfer.getReceiverBankBicfi(),
+            senderIbanForXml, transfer.getReceiverAccountNumber(),
+            senderName, transfer.getReceiverName(),
+            transfer.getAmount(), senderAccount.getCurrency(),
+            transfer.getTitle(), serviceCodeFor(transfer.getRoutingSystem())
+    );
+
+    try {
+        switch (transfer.getRoutingSystem()) {
+            case "ELIXIR" -> {
+                elixirClient.sendPayment(xml);
+                transfer.setStatus("SENT");
+                transfer.setSentAt(LocalDateTime.now());
+            }
+            case "EXPRESS" -> {
+                IsoXml.ParsedResponse r = expressClient.sendPayment(
+                        transfer.getExternalPaymentId(), senderBicfi, transfer.getReceiverBankBicfi(),
+                        senderAccount.getAccountNumber(), transfer.getReceiverAccountNumber(),
+                        senderName, transfer.getReceiverName(), transfer.getAmount(),
+                        senderAccount.getCurrency(), transfer.getTitle());
+                transfer.setSentAt(LocalDateTime.now());
+                applyImmediateResponse(transfer, senderAccount, r);
+            }
+            case "SORBNET" -> {
+                IsoXml.ParsedResponse r = sorbnetClient.sendPayment(xml);
+                transfer.setSentAt(LocalDateTime.now());
+                applyImmediateResponse(transfer, senderAccount, r);
+            }
+        }
+    } catch (Exception e) {
+        senderAccount.setBalance(senderAccount.getBalance().add(transfer.getAmount()));
+        senderAccount.setBlockedFunds(senderAccount.getBlockedFunds().subtract(transfer.getAmount()));
+        accountRepository.save(senderAccount);
+        transfer.setStatus("REJECTED");
+        transfer.setRejectionReason("Błąd po AML: " + e.getMessage());
+    }
+    transferRepository.save(transfer);
+}
+
+    @Transactional
+    public void cancelAfterAml(UUID transferId) {
+        ExternalTransfer transfer = transferRepository.findById(transferId)
+                .orElseThrow(() -> new IllegalArgumentException("Przelew nie istnieje."));
+        if (!"HELD_FOR_AML".equals(transfer.getStatus())) {
+            throw new IllegalStateException("Przelew nie jest w stanie HELD_FOR_AML.");
+        }
+        Account senderAccount = transfer.getSenderAccount();
+        senderAccount.setBalance(senderAccount.getBalance().add(transfer.getAmount()));
+        senderAccount.setBlockedFunds(senderAccount.getBlockedFunds().subtract(transfer.getAmount()));
+        accountRepository.save(senderAccount);
+
+        transfer.setStatus("REJECTED_AML");
+        transfer.setRejectionReason("Odrzucono przez AML");
+        transferRepository.save(transfer);
     }
 }

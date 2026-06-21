@@ -1,5 +1,10 @@
 package com.polishbank.bank_a.domain.swift;
 
+import com.polishbank.bank_a.domain.aml.AmlContext;
+import com.polishbank.bank_a.domain.aml.AmlEvaluator;
+import com.polishbank.bank_a.domain.aml.AmlHoldCreator;
+import com.polishbank.bank_a.domain.aml.AmlResult;
+import com.polishbank.bank_a.domain.aml.AmlTransactionType;
 import com.polishbank.bank_a.domain.auth.PinService;
 import com.polishbank.bank_a.domain.swift.dto.SwiftTransferRequest;
 import com.polishbank.bank_a.domain.swift.dto.SwiftTransferResponse;
@@ -44,6 +49,8 @@ public class SwiftService {
     private final SwiftPacs008Builder pacs008Builder;
     private final SwiftProperties properties;
     private final SwiftExchangeRateProvider exchangeRateProvider;
+    private final AmlEvaluator amlEvaluator;
+    private final AmlHoldCreator amlHoldCreator;
 
     @Transactional
     public SwiftTransferResponse send(SwiftTransferRequest request, String userEmail) {
@@ -130,6 +137,30 @@ public class SwiftService {
                 .build();
         swiftTransferRepository.save(swift);
 
+        // === AML CHECK ===
+        AmlResult eval = amlEvaluator.evaluate(new AmlContext(
+                sender.getUser().getId(),
+                sender.getId(),
+                request.amount(),
+                request.currency(),
+                AmlTransactionType.SWIFT,
+                request.title(),
+                request.receiverIban(),
+                request.receiverCountry()
+        ));
+        if (eval.hold()) {
+            sender.setBlockedFunds(sender.getBlockedFunds().add(debitAmount));
+            accountRepository.save(sender);
+            swift.setStatus("HELD_FOR_AML");
+            transaction.setStatus("HELD_FOR_AML");
+            swiftTransferRepository.save(swift);
+            transactionRepository.save(transaction);
+            amlHoldCreator.create(sender.getUser(), sender, AmlTransactionType.SWIFT,
+                    transaction, null, swift, eval, request.amount(), request.currency(),
+                    request.receiverIban() + " | " + request.receiverBic());
+            return toResponse(swift, transaction, debitAmount, sender.getCurrency());
+        }
+
         try {
             SwiftMiddlewareClient.SendResult result = middlewareClient.sendMessage(built.xml());
             applyMiddlewareResult(swift, result);
@@ -156,6 +187,81 @@ public class SwiftService {
         }
 
         return toResponse(swift, transaction, debitAmount, sender.getCurrency());
+    }
+
+    @Transactional
+    public void finalizeAfterAml(UUID swiftTransferId) {
+        SwiftTransfer swift = swiftTransferRepository.findById(swiftTransferId)
+                .orElseThrow(() -> new IllegalArgumentException("Przelew SWIFT nie istnieje."));
+        if (!"HELD_FOR_AML".equals(swift.getStatus())) {
+            throw new IllegalStateException("Przelew nie jest w stanie HELD_FOR_AML.");
+        }
+        Transaction tx = swift.getTransaction();
+        Account sender = tx.getSenderAccount();
+
+        BigDecimal debitAmount = exchangeRateProvider.convert(
+                tx.getAmount(), tx.getCurrency(), sender.getCurrency());
+
+        sender.setBlockedFunds(sender.getBlockedFunds().subtract(debitAmount));
+        accountRepository.save(sender);
+
+        SwiftPacs008Builder.MessageInput xmlInput = new SwiftPacs008Builder.MessageInput(
+                properties.bic(),
+                sender.getUser().getFirstName() + " " + sender.getUser().getLastName(),
+                sender.getAccountNumber(),
+                swift.getReceiverBic(),
+                tx.getReceiverName(),
+                swift.getReceiverIban(),
+                swift.getReceiverCountry(),
+                tx.getAmount(),
+                tx.getCurrency(),
+                swift.getChargeBearer(),
+                tx.getTitle()
+        );
+        SwiftPacs008Builder.BuiltMessage built = pacs008Builder.build(xmlInput);
+
+        try {
+            SwiftMiddlewareClient.SendResult result = middlewareClient.sendMessage(built.xml());
+            applyMiddlewareResult(swift, result);
+            swift.setStatus("IN_TRANSIT");
+            tx.setStatus("IN_TRANSIT");
+        } catch (SwiftMiddlewareException e) {
+            log.warn("[SWIFT_REJECTED_AFTER_AML] uetr={} status={} message={}",
+                    swift.getUetr(), e.getHttpStatus(), e.getMessage());
+            sender.setBalance(sender.getBalance().add(debitAmount));
+            accountRepository.save(sender);
+            swift.setStatus("RETURNED");
+            swift.setReturnReason(translateReturnReason(e));
+            swift.setReturnedAt(LocalDateTime.now(ZONE));
+            tx.setStatus("RETURNED");
+        }
+        swiftTransferRepository.save(swift);
+        transactionRepository.save(tx);
+    }
+
+    @Transactional
+    public void cancelAfterAml(UUID swiftTransferId) {
+        SwiftTransfer swift = swiftTransferRepository.findById(swiftTransferId)
+                .orElseThrow(() -> new IllegalArgumentException("Przelew SWIFT nie istnieje."));
+        if (!"HELD_FOR_AML".equals(swift.getStatus())) {
+            throw new IllegalStateException("Przelew nie jest w stanie HELD_FOR_AML.");
+        }
+        Transaction tx = swift.getTransaction();
+        Account sender = tx.getSenderAccount();
+
+        BigDecimal debitAmount = exchangeRateProvider.convert(
+                tx.getAmount(), tx.getCurrency(), sender.getCurrency());
+
+        sender.setBalance(sender.getBalance().add(debitAmount));
+        sender.setBlockedFunds(sender.getBlockedFunds().subtract(debitAmount));
+        accountRepository.save(sender);
+
+        swift.setStatus("REJECTED_AML");
+        swift.setReturnReason("Odrzucono przez AML");
+        swift.setReturnedAt(LocalDateTime.now(ZONE));
+        tx.setStatus("REJECTED_AML");
+        swiftTransferRepository.save(swift);
+        transactionRepository.save(tx);
     }
 
     public List<SwiftTransferResponse> listForUser(String userEmail) {
@@ -228,7 +334,7 @@ public class SwiftService {
         };
     }
 
-        private SwiftTransferResponse toResponse(SwiftTransfer s, Transaction tx) {
+    private SwiftTransferResponse toResponse(SwiftTransfer s, Transaction tx) {
         BigDecimal debited = null;
         String debitedCurrency = null;
         if (tx != null && tx.getSenderAccount() != null && tx.getAmount() != null && tx.getCurrency() != null) {

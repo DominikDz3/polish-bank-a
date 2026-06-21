@@ -1,5 +1,10 @@
 package com.polishbank.bank_a.domain.transaction;
 
+import com.polishbank.bank_a.domain.aml.AmlContext;
+import com.polishbank.bank_a.domain.aml.AmlEvaluator;
+import com.polishbank.bank_a.domain.aml.AmlHoldCreator;
+import com.polishbank.bank_a.domain.aml.AmlResult;
+import com.polishbank.bank_a.domain.aml.AmlTransactionType;
 import com.polishbank.bank_a.domain.auth.PinService;
 import com.polishbank.bank_a.domain.transaction.dto.InternalTransferRequest;
 import com.polishbank.bank_a.domain.transaction.dto.TransactionResponse;
@@ -32,6 +37,8 @@ public class TransactionService {
     private final UserRepository userRepository;
     private final PendingApprovalRepository pendingApprovalRepository;
     private final PinService pinService;
+    private final AmlEvaluator amlEvaluator;
+    private final AmlHoldCreator amlHoldCreator;
 
     @Transactional
     public String processInternalTransfer(InternalTransferRequest request, String customerNumber) {
@@ -90,6 +97,32 @@ public class TransactionService {
             return "PENDING_APPROVAL";
         }
 
+        // === AML CHECK ===
+        AmlResult eval = amlEvaluator.evaluate(new AmlContext(
+                senderAccount.getUser().getId(),
+                senderAccount.getId(),
+                request.amount(),
+                senderAccount.getCurrency(),
+                AmlTransactionType.INTERNAL,
+                request.title(),
+                request.receiverAccountNumber(),
+                null
+        ));
+        if (eval.hold()) {
+            senderAccount.setBalance(senderAccount.getBalance().subtract(request.amount()));
+            senderAccount.setBlockedFunds(senderAccount.getBlockedFunds().add(request.amount()));
+            accountRepository.save(senderAccount);
+
+            transaction.setStatus("HELD_FOR_AML");
+            transactionRepository.save(transaction);
+
+            amlHoldCreator.create(senderAccount.getUser(), senderAccount,
+                    AmlTransactionType.INTERNAL, transaction, null, null,
+                    eval, request.amount(), senderAccount.getCurrency(),
+                    request.receiverAccountNumber());
+            return "HELD_FOR_AML";
+        }
+
         senderAccount.setBalance(senderAccount.getBalance().subtract(request.amount()));
         receiverAccount.setBalance(receiverAccount.getBalance().add(request.amount()));
 
@@ -98,6 +131,45 @@ public class TransactionService {
         transactionRepository.save(transaction);
 
         return "COMPLETED";
+    }
+
+    @Transactional
+    public void finalizeAfterAml(UUID transactionId) {
+        Transaction tx = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new IllegalArgumentException("Transakcja nie istnieje."));
+        if (!"HELD_FOR_AML".equals(tx.getStatus())) {
+            throw new IllegalStateException("Transakcja nie jest w stanie HELD_FOR_AML.");
+        }
+        Account sender = tx.getSenderAccount();
+        Account receiver = tx.getReceiverAccount();
+
+        sender.setBlockedFunds(sender.getBlockedFunds().subtract(tx.getAmount()));
+        accountRepository.save(sender);
+
+        if (receiver != null) {
+            receiver.setBalance(receiver.getBalance().add(tx.getAmount()));
+            accountRepository.save(receiver);
+        }
+
+        tx.setStatus("COMPLETED");
+        tx.setExecutionDate(LocalDateTime.now(ZONE));
+        transactionRepository.save(tx);
+    }
+
+    @Transactional
+    public void cancelAfterAml(UUID transactionId) {
+        Transaction tx = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new IllegalArgumentException("Transakcja nie istnieje."));
+        if (!"HELD_FOR_AML".equals(tx.getStatus())) {
+            throw new IllegalStateException("Transakcja nie jest w stanie HELD_FOR_AML.");
+        }
+        Account sender = tx.getSenderAccount();
+        sender.setBalance(sender.getBalance().add(tx.getAmount()));
+        sender.setBlockedFunds(sender.getBlockedFunds().subtract(tx.getAmount()));
+        accountRepository.save(sender);
+
+        tx.setStatus("REJECTED_AML");
+        transactionRepository.save(tx);
     }
 
     public List<TransactionResponse> getHistory(UUID accountId, String userEmail) {

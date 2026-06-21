@@ -43,6 +43,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/pin").authenticated()                        
                         .requestMatchers("/api/webhooks/**").permitAll()
+                        .requestMatchers("/api/aml/admin/**").hasAuthority("ROLE_ADMIN")
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())
