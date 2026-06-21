@@ -19,6 +19,8 @@ import SwiftTransfer from './pages/SwiftTransfer.tsx'
 import ExternalTransfer from './pages/auth/ExternalTransfer.tsx'
 import KlikP2PTransfer from './pages/KlikP2PTransfer.tsx'
 import Settings from './pages/Settings.tsx'
+import AmlAdmin from './pages/AmlAdmin.tsx'
+import AmlHolds from './pages/AmlHolds.tsx'
 
 
 
@@ -103,6 +105,19 @@ function App() {
             <Settings />
           </ProtectedRoute>
         } />
+
+        <Route path={ROUTES.AML_HOLDS} element={
+          <ProtectedRoute>
+            <AmlHolds />
+          </ProtectedRoute>
+        } />
+
+        <Route path={ROUTES.AML_ADMIN} element={
+          <ProtectedRoute>
+            <AmlAdmin />
+          </ProtectedRoute>
+        } />
+
       </Routes>
     </AuthProvider>
   )

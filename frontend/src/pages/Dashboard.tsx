@@ -45,6 +45,7 @@ export default function Dashboard() {
   const activeTab: TabType = (searchParams.get('tab') === 'junior') ? 'JUNIOR' : 'PERSONAL';
 
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+  const [amlCount, setAmlCount] = useState(0);
 
   const setActiveTab = (tab: TabType) => {
     setSearchParams(tab === 'JUNIOR' ? { tab: 'junior' } : {});
@@ -84,6 +85,12 @@ export default function Dashboard() {
       }
     };
     fetchAccounts();
+  }, []);
+
+  useEffect(() => {
+    api.get('/api/aml/holds/count')
+      .then(r => setAmlCount(r.data.count || 0))
+      .catch(() => { /* ignoruj */ });
   }, []);
 
   const formatCurrency = (amount: number, currency: string) => {
@@ -173,6 +180,15 @@ export default function Dashboard() {
 
             <div className="h-8 w-px bg-zinc-800 hidden md:block"></div>
 
+            {user?.role?.toUpperCase() === 'ADMIN' && (
+              <button onClick={() => navigate('/aml/admin')} title="Panel AML"
+                className="text-zinc-400 hover:text-white p-2 rounded-lg transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </button>
+            )}
+
             <div className="flex items-center gap-3">
               {!isJunior && (
                 <button onClick={() => navigate('/settings')} title="Ustawienia"
@@ -214,6 +230,26 @@ export default function Dashboard() {
               </div>
             </div>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        )}
+
+        {amlCount > 0 && (
+          <div
+            onClick={() => navigate('/aml/holds')}
+            className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 mb-6 cursor-pointer hover:bg-orange-500/20 transition-colors flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <AlertCircle className="text-orange-400 shrink-0" size={22} />
+              <div>
+                <p className="text-orange-200 font-medium">
+                  Masz {amlCount} {amlCount === 1 ? 'wstrzymaną transakcję' : 'wstrzymane transakcje'} przez system AML
+                </p>
+                <p className="text-orange-300/60 text-sm">Złóż wyjaśnienia, żeby bank mógł rozpatrzyć</p>
+              </div>
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </div>

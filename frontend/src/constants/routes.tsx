@@ -15,4 +15,6 @@ export const ROUTES = {
     EXTERNAL_TRANSFER: '/transfer/external',
     KLIK_P2P: '/transfer/klik',
     SETTINGS: '/settings',
+    AML_HOLDS: '/aml/holds',
+    AML_ADMIN: '/aml/admin',
 };
