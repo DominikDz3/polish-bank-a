@@ -1,0 +1,481 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_ExpressElixir" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.16.0">
+  <bpmn:collaboration id="Collaboration_Express">
+    <bpmn:participant id="Participant_Klient" name="Klient" />
+    <bpmn:participant id="Participant_BankA" name="Bank A" processRef="Process_BankA" />
+    <bpmn:participant id="Participant_Express" name="Express ELIXIR (jednostka rozliczeniowa)" processRef="Process_Express" />
+    <bpmn:participant id="Participant_BankB" name="Bank B (odbiorca)" />
+    <bpmn:messageFlow id="MF_Init" name="POST /api/external-transfers EXPRESS (PIN + JWT)" sourceRef="Participant_Klient" targetRef="StartEvent_BankA" />
+    <bpmn:messageFlow id="MF_SendToExpress" name="payload JSON typu EXPRESS" sourceRef="SendTask_Express" targetRef="StartEvent_ExpInbox" />
+    <bpmn:messageFlow id="MF_ExpSettled" name="Status PROCESSED" sourceRef="EndEvent_ExpDone" targetRef="CatchEvent_ExpResp" />
+    <bpmn:messageFlow id="MF_ExpBlocked" name="Status REJECTED (bank zablokowany)" sourceRef="EndEvent_BankBlocked" targetRef="CatchEvent_ExpResp" />
+    <bpmn:messageFlow id="MF_AlertOperator" name="Alert popup: przekroczono limit zadłużenia" sourceRef="ThrowEvent_AlertBank" targetRef="Participant_BankA" />
+    <bpmn:messageFlow id="MF_NotifyBankB" name="Uznanie konta odbiorcy w sekundach" sourceRef="Task_NotifyBankB" targetRef="Participant_BankB" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_BankA" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_BankA">
+      <bpmn:lane id="Lane_BankBackend" name="Backend Bank A">
+        <bpmn:flowNodeRef>StartEvent_BankA</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Validate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_BlockFunds</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>SendTask_Express</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>CatchEvent_ExpResp</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_ExpStatus</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Complete</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Settled</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Return</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Rejected</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_BankA" name="Klient zlecił przelew natychmiastowy">
+      <bpmn:outgoing>Flow_A1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_Init" />
+    </bpmn:startEvent>
+    <bpmn:task id="Task_Validate" name="Walidacja PIN i salda dostępnego">
+      <bpmn:incoming>Flow_A1</bpmn:incoming>
+      <bpmn:outgoing>Flow_A2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_BlockFunds" name="Blokada środków na koncie nadawcy">
+      <bpmn:incoming>Flow_A2</bpmn:incoming>
+      <bpmn:outgoing>Flow_A3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sendTask id="SendTask_Express" name="Wyślij do jednostki Express ELIXIR">
+      <bpmn:incoming>Flow_A3</bpmn:incoming>
+      <bpmn:outgoing>Flow_A4</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:intermediateCatchEvent id="CatchEvent_ExpResp" name="Odbiór statusu finalnego">
+      <bpmn:incoming>Flow_A4</bpmn:incoming>
+      <bpmn:outgoing>Flow_A5</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_ExpResp" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:exclusiveGateway id="Gateway_ExpStatus" name="Status?">
+      <bpmn:incoming>Flow_A5</bpmn:incoming>
+      <bpmn:outgoing>Flow_A_Settled</bpmn:outgoing>
+      <bpmn:outgoing>Flow_A_Rejected</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Complete" name="Zwolnienie blockedFunds, status PROCESSED">
+      <bpmn:incoming>Flow_A_Settled</bpmn:incoming>
+      <bpmn:outgoing>Flow_A6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Settled" name="Przelew rozliczony">
+      <bpmn:incoming>Flow_A6</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Return" name="Zwrot środków na konto klienta, status REJECTED">
+      <bpmn:incoming>Flow_A_Rejected</bpmn:incoming>
+      <bpmn:outgoing>Flow_A7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Rejected" name="Przelew odrzucony">
+      <bpmn:incoming>Flow_A7</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_A1" sourceRef="StartEvent_BankA" targetRef="Task_Validate" />
+    <bpmn:sequenceFlow id="Flow_A2" sourceRef="Task_Validate" targetRef="Task_BlockFunds" />
+    <bpmn:sequenceFlow id="Flow_A3" sourceRef="Task_BlockFunds" targetRef="SendTask_Express" />
+    <bpmn:sequenceFlow id="Flow_A4" sourceRef="SendTask_Express" targetRef="CatchEvent_ExpResp" />
+    <bpmn:sequenceFlow id="Flow_A5" sourceRef="CatchEvent_ExpResp" targetRef="Gateway_ExpStatus" />
+    <bpmn:sequenceFlow id="Flow_A_Settled" name="PROCESSED" sourceRef="Gateway_ExpStatus" targetRef="Task_Complete" />
+    <bpmn:sequenceFlow id="Flow_A_Rejected" name="REJECTED" sourceRef="Gateway_ExpStatus" targetRef="Task_Return" />
+    <bpmn:sequenceFlow id="Flow_A6" sourceRef="Task_Complete" targetRef="EndEvent_Settled" />
+    <bpmn:sequenceFlow id="Flow_A7" sourceRef="Task_Return" targetRef="EndEvent_Rejected" />
+  </bpmn:process>
+  <bpmn:process id="Process_Express" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_Express">
+      <bpmn:lane id="Lane_Express" name="Rozliczenie real-time + gridlock resolution">
+        <bpmn:flowNodeRef>StartEvent_ExpInbox</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_LimitOk</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Settlement</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_NotifyBankB</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_ExpDone</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_GridlockSearch</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_GridlockOk</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Alert</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ThrowEvent_AlertBank</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>IntermediateTimer_2h</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_BankPaid</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_BlockBank</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_BankBlocked</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_ExpInbox" name="Otrzymano komunikat od Banku A">
+      <bpmn:outgoing>Flow_E1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_ExpInbox" />
+    </bpmn:startEvent>
+    <bpmn:exclusiveGateway id="Gateway_LimitOk" name="Limit zadłużenia OK?">
+      <bpmn:incoming>Flow_E1</bpmn:incoming>
+      <bpmn:outgoing>Flow_E_LimitOk</bpmn:outgoing>
+      <bpmn:outgoing>Flow_E_LimitBad</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Settlement" name="Settlement natychmiastowy między bankami">
+      <bpmn:incoming>Flow_E_LimitOk</bpmn:incoming>
+      <bpmn:incoming>Flow_E_GridOk</bpmn:incoming>
+      <bpmn:incoming>Flow_E_BankPaid</bpmn:incoming>
+      <bpmn:outgoing>Flow_E_NotifyB</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_NotifyBankB" name="Wysłanie komunikatu uznania do Banku B">
+      <bpmn:incoming>Flow_E_NotifyB</bpmn:incoming>
+      <bpmn:outgoing>Flow_E_Done</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_ExpDone" name="Przelew zrealizowany">
+      <bpmn:incoming>Flow_E_Done</bpmn:incoming>
+      <bpmn:messageEventDefinition id="MED_ExpDone" />
+    </bpmn:endEvent>
+    <bpmn:task id="Task_GridlockSearch" name="Gridlock resolution: szukaj cyklu wzajemnych zobowiązań">
+      <bpmn:incoming>Flow_E_LimitBad</bpmn:incoming>
+      <bpmn:outgoing>Flow_E_GridGW</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_GridlockOk" name="Zator rozwiązany?">
+      <bpmn:incoming>Flow_E_GridGW</bpmn:incoming>
+      <bpmn:outgoing>Flow_E_GridOk</bpmn:outgoing>
+      <bpmn:outgoing>Flow_E_GridBad</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Alert" name="Wystaw alert operatorowi + Bankowi A">
+      <bpmn:incoming>Flow_E_GridBad</bpmn:incoming>
+      <bpmn:outgoing>Flow_E_AfterAlert</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:intermediateThrowEvent id="ThrowEvent_AlertBank" name="Wyślij alert do Banku A">
+      <bpmn:incoming>Flow_E_AfterAlert</bpmn:incoming>
+      <bpmn:outgoing>Flow_E_Timer</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_AlertBank" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:intermediateCatchEvent id="IntermediateTimer_2h" name="Czekaj 2 godziny na uzupełnienie płynności">
+      <bpmn:incoming>Flow_E_Timer</bpmn:incoming>
+      <bpmn:outgoing>Flow_E_AfterTimer</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TED_2h" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:exclusiveGateway id="Gateway_BankPaid" name="Bank uzupełnił płynność?">
+      <bpmn:incoming>Flow_E_AfterTimer</bpmn:incoming>
+      <bpmn:outgoing>Flow_E_BankPaid</bpmn:outgoing>
+      <bpmn:outgoing>Flow_E_NotPaid</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_BlockBank" name="Automatyczna blokada Banku A w systemie">
+      <bpmn:incoming>Flow_E_NotPaid</bpmn:incoming>
+      <bpmn:outgoing>Flow_E_BlockEnd</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_BankBlocked" name="Bank A zablokowany, przelew odrzucony">
+      <bpmn:incoming>Flow_E_BlockEnd</bpmn:incoming>
+      <bpmn:messageEventDefinition id="MED_BankBlocked" />
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_E1" sourceRef="StartEvent_ExpInbox" targetRef="Gateway_LimitOk" />
+    <bpmn:sequenceFlow id="Flow_E_LimitOk" name="TAK" sourceRef="Gateway_LimitOk" targetRef="Task_Settlement" />
+    <bpmn:sequenceFlow id="Flow_E_LimitBad" name="NIE" sourceRef="Gateway_LimitOk" targetRef="Task_GridlockSearch" />
+    <bpmn:sequenceFlow id="Flow_E_GridOk" name="TAK" sourceRef="Gateway_GridlockOk" targetRef="Task_Settlement" />
+    <bpmn:sequenceFlow id="Flow_E_BankPaid" name="TAK" sourceRef="Gateway_BankPaid" targetRef="Task_Settlement" />
+    <bpmn:sequenceFlow id="Flow_E_NotifyB" sourceRef="Task_Settlement" targetRef="Task_NotifyBankB" />
+    <bpmn:sequenceFlow id="Flow_E_Done" sourceRef="Task_NotifyBankB" targetRef="EndEvent_ExpDone" />
+    <bpmn:sequenceFlow id="Flow_E_GridGW" sourceRef="Task_GridlockSearch" targetRef="Gateway_GridlockOk" />
+    <bpmn:sequenceFlow id="Flow_E_GridBad" name="NIE" sourceRef="Gateway_GridlockOk" targetRef="Task_Alert" />
+    <bpmn:sequenceFlow id="Flow_E_AfterAlert" sourceRef="Task_Alert" targetRef="ThrowEvent_AlertBank" />
+    <bpmn:sequenceFlow id="Flow_E_Timer" sourceRef="ThrowEvent_AlertBank" targetRef="IntermediateTimer_2h" />
+    <bpmn:sequenceFlow id="Flow_E_AfterTimer" sourceRef="IntermediateTimer_2h" targetRef="Gateway_BankPaid" />
+    <bpmn:sequenceFlow id="Flow_E_NotPaid" name="NIE" sourceRef="Gateway_BankPaid" targetRef="Task_BlockBank" />
+    <bpmn:sequenceFlow id="Flow_E_BlockEnd" sourceRef="Task_BlockBank" targetRef="EndEvent_BankBlocked" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_Express">
+      <bpmndi:BPMNShape id="Participant_Klient_di" bpmnElement="Participant_Klient" isHorizontal="true">
+        <dc:Bounds x="155" y="80" width="1700" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_BankA_di" bpmnElement="Participant_BankA" isHorizontal="true">
+        <dc:Bounds x="155" y="160" width="1700" height="440" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_BankBackend_di" bpmnElement="Lane_BankBackend" isHorizontal="true">
+        <dc:Bounds x="185" y="160" width="1670" height="440" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_BankA_di" bpmnElement="StartEvent_BankA">
+        <dc:Bounds x="220" y="342" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="209" y="385" width="57" height="66" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Validate_di" bpmnElement="Task_Validate">
+        <dc:Bounds x="290" y="320" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BlockFunds_di" bpmnElement="Task_BlockFunds">
+        <dc:Bounds x="460" y="320" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SendTask_Express_di" bpmnElement="SendTask_Express">
+        <dc:Bounds x="660" y="320" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CatchEvent_ExpResp_di" bpmnElement="CatchEvent_ExpResp">
+        <dc:Bounds x="860" y="342" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="842" y="306" width="72" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ExpStatus_di" bpmnElement="Gateway_ExpStatus" isMarkerVisible="true">
+        <dc:Bounds x="925" y="335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="986" y="363" width="38" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Complete_di" bpmnElement="Task_Complete">
+        <dc:Bounds x="1025" y="240" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Settled_di" bpmnElement="EndEvent_Settled">
+        <dc:Bounds x="1255" y="262" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1251" y="305" width="49" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Return_di" bpmnElement="Task_Return">
+        <dc:Bounds x="1025" y="440" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Rejected_di" bpmnElement="EndEvent_Rejected">
+        <dc:Bounds x="1255" y="462" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1250" y="505" width="51" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_A1_di" bpmnElement="Flow_A1">
+        <di:waypoint x="256" y="360" />
+        <di:waypoint x="290" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A2_di" bpmnElement="Flow_A2">
+        <di:waypoint x="430" y="360" />
+        <di:waypoint x="460" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A3_di" bpmnElement="Flow_A3">
+        <di:waypoint x="630" y="360" />
+        <di:waypoint x="660" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A4_di" bpmnElement="Flow_A4">
+        <di:waypoint x="830" y="360" />
+        <di:waypoint x="860" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A5_di" bpmnElement="Flow_A5">
+        <di:waypoint x="896" y="360" />
+        <di:waypoint x="925" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A_Settled_di" bpmnElement="Flow_A_Settled">
+        <di:waypoint x="950" y="335" />
+        <di:waypoint x="950" y="280" />
+        <di:waypoint x="1025" y="280" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="956" y="292" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A_Rejected_di" bpmnElement="Flow_A_Rejected">
+        <di:waypoint x="950" y="385" />
+        <di:waypoint x="950" y="480" />
+        <di:waypoint x="1025" y="480" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="960" y="440" width="59" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A6_di" bpmnElement="Flow_A6">
+        <di:waypoint x="1225" y="280" />
+        <di:waypoint x="1255" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A7_di" bpmnElement="Flow_A7">
+        <di:waypoint x="1225" y="480" />
+        <di:waypoint x="1255" y="480" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_Express_di" bpmnElement="Participant_Express" isHorizontal="true">
+        <dc:Bounds x="155" y="640" width="1700" height="560" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Express_di" bpmnElement="Lane_Express" isHorizontal="true">
+        <dc:Bounds x="185" y="640" width="1670" height="560" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_ExpInbox_di" bpmnElement="StartEvent_ExpInbox">
+        <dc:Bounds x="220" y="802" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="224" y="845" width="56" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_LimitOk_di" bpmnElement="Gateway_LimitOk" isMarkerVisible="true">
+        <dc:Bounds x="295" y="795" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="350" y="806" width="79" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Settlement_di" bpmnElement="Task_Settlement">
+        <dc:Bounds x="395" y="680" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_NotifyBankB_di" bpmnElement="Task_NotifyBankB">
+        <dc:Bounds x="630" y="680" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_ExpDone_di" bpmnElement="EndEvent_ExpDone">
+        <dc:Bounds x="870" y="702" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="856" y="745" width="64" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_GridlockSearch_di" bpmnElement="Task_GridlockSearch">
+        <dc:Bounds x="395" y="880" width="220" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_GridlockOk_di" bpmnElement="Gateway_GridlockOk" isMarkerVisible="true">
+        <dc:Bounds x="650" y="895" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="706" y="913" width="90" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Alert_di" bpmnElement="Task_Alert">
+        <dc:Bounds x="750" y="1000" width="180" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ThrowEvent_AlertBank_di" bpmnElement="ThrowEvent_AlertBank">
+        <dc:Bounds x="960" y="1022" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="946" y="1065" width="50" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="IntermediateTimer_2h_di" bpmnElement="IntermediateTimer_2h">
+        <dc:Bounds x="1030" y="1022" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1014" y="1065" width="76" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_BankPaid_di" bpmnElement="Gateway_BankPaid" isMarkerVisible="true">
+        <dc:Bounds x="1100" y="1015" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1054" y="976" width="72" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BlockBank_di" bpmnElement="Task_BlockBank">
+        <dc:Bounds x="1200" y="1000" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_BankBlocked_di" bpmnElement="EndEvent_BankBlocked">
+        <dc:Bounds x="1430" y="1022" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1407" y="1065" width="105" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_E1_di" bpmnElement="Flow_E1">
+        <di:waypoint x="256" y="820" />
+        <di:waypoint x="295" y="820" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_LimitOk_di" bpmnElement="Flow_E_LimitOk">
+        <di:waypoint x="320" y="795" />
+        <di:waypoint x="320" y="720" />
+        <di:waypoint x="395" y="720" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="329" y="745" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_LimitBad_di" bpmnElement="Flow_E_LimitBad">
+        <di:waypoint x="320" y="845" />
+        <di:waypoint x="320" y="920" />
+        <di:waypoint x="395" y="920" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="329" y="875" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_NotifyB_di" bpmnElement="Flow_E_NotifyB">
+        <di:waypoint x="595" y="720" />
+        <di:waypoint x="630" y="720" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_Done_di" bpmnElement="Flow_E_Done">
+        <di:waypoint x="830" y="720" />
+        <di:waypoint x="870" y="720" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_GridGW_di" bpmnElement="Flow_E_GridGW">
+        <di:waypoint x="615" y="920" />
+        <di:waypoint x="650" y="920" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_GridOk_di" bpmnElement="Flow_E_GridOk">
+        <di:waypoint x="675" y="895" />
+        <di:waypoint x="675" y="790" />
+        <di:waypoint x="495" y="790" />
+        <di:waypoint x="495" y="760" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="556" y="772" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_GridBad_di" bpmnElement="Flow_E_GridBad">
+        <di:waypoint x="675" y="945" />
+        <di:waypoint x="675" y="1040" />
+        <di:waypoint x="750" y="1040" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="684" y="990" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_AfterAlert_di" bpmnElement="Flow_E_AfterAlert">
+        <di:waypoint x="930" y="1040" />
+        <di:waypoint x="960" y="1040" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_Timer_di" bpmnElement="Flow_E_Timer">
+        <di:waypoint x="996" y="1040" />
+        <di:waypoint x="1030" y="1040" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_AfterTimer_di" bpmnElement="Flow_E_AfterTimer">
+        <di:waypoint x="1066" y="1040" />
+        <di:waypoint x="1100" y="1040" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_BankPaid_di" bpmnElement="Flow_E_BankPaid">
+        <di:waypoint x="1125" y="1015" />
+        <di:waypoint x="1125" y="805" />
+        <di:waypoint x="495" y="805" />
+        <di:waypoint x="495" y="760" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1129" y="913" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_NotPaid_di" bpmnElement="Flow_E_NotPaid">
+        <di:waypoint x="1150" y="1040" />
+        <di:waypoint x="1200" y="1040" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1170" y="1022" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_E_BlockEnd_di" bpmnElement="Flow_E_BlockEnd">
+        <di:waypoint x="1400" y="1040" />
+        <di:waypoint x="1430" y="1040" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_BankB_di" bpmnElement="Participant_BankB" isHorizontal="true">
+        <dc:Bounds x="155" y="1240" width="1700" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="MF_Init_di" bpmnElement="MF_Init">
+        <di:waypoint x="238" y="140" />
+        <di:waypoint x="238" y="342" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="252" y="220" width="168" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_SendToExpress_di" bpmnElement="MF_SendToExpress">
+        <di:waypoint x="745" y="400" />
+        <di:waypoint x="745" y="615" />
+        <di:waypoint x="238" y="615" />
+        <di:waypoint x="238" y="802" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="435" y="618" width="150" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_ExpSettled_di" bpmnElement="MF_ExpSettled">
+        <di:waypoint x="888" y="702" />
+        <di:waypoint x="888" y="625" />
+        <di:waypoint x="878" y="625" />
+        <di:waypoint x="878" y="378" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="910" y="601" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_ExpBlocked_di" bpmnElement="MF_ExpBlocked">
+        <di:waypoint x="1448" y="1022" />
+        <di:waypoint x="1448" y="600" />
+        <di:waypoint x="878" y="600" />
+        <di:waypoint x="878" y="378" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1243" y="608" width="194" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_AlertOperator_di" bpmnElement="MF_AlertOperator">
+        <di:waypoint x="978" y="1022" />
+        <di:waypoint x="978" y="600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="766" y="813" width="207" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_NotifyBankB_di" bpmnElement="MF_NotifyBankB">
+        <di:waypoint x="730" y="760" />
+        <di:waypoint x="730" y="1240" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="488" y="1013" width="183" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

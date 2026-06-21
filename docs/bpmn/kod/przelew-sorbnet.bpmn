@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_Sorbnet" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.16.0">
+  <bpmn:collaboration id="Collaboration_Sorbnet">
+    <bpmn:participant id="Participant_Klient" name="Klient (przelew wysokokwotowy)" />
+    <bpmn:participant id="Participant_BankA" name="Bank A" processRef="Process_BankA" />
+    <bpmn:participant id="Participant_NBP" name="NBP SORBNET3 (RTGS)" processRef="Process_NBP" />
+    <bpmn:participant id="Participant_BankB" name="Bank B (odbiorca)" />
+    <bpmn:messageFlow id="MF_Init" name="POST /api/external-transfers SORBNET (PIN + JWT)" sourceRef="Participant_Klient" targetRef="StartEvent_BankA" />
+    <bpmn:messageFlow id="MF_SendToNbp" name="pacs.008 z IBAN sorbnetAccount" sourceRef="SendTask_NBP" targetRef="StartEvent_NbpInbox" />
+    <bpmn:messageFlow id="MF_NbpSettled" name="pain.002 SETTLED" sourceRef="EndEvent_NbpDone" targetRef="CatchEvent_NbpResp" />
+    <bpmn:messageFlow id="MF_NbpRejected" name="pain.002 REJECTED (braki płynności)" sourceRef="EndEvent_NbpReject" targetRef="CatchEvent_NbpResp" />
+    <bpmn:messageFlow id="MF_NotifyBankB" name="MT910 + uznanie konta odbiorcy" sourceRef="Task_NotifyBankB" targetRef="Participant_BankB" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_BankA" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_BankA">
+      <bpmn:lane id="Lane_BankBackend" name="Backend Bank A">
+        <bpmn:flowNodeRef>StartEvent_BankA</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Validate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_BlockFunds</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_BuildXml</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>SendTask_NBP</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>CatchEvent_NbpResp</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_NbpStatus</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Complete</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Settled</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Return</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Rejected</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_BankA" name="Klient zlecił przelew SORBNET">
+      <bpmn:outgoing>Flow_A1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_Init" />
+    </bpmn:startEvent>
+    <bpmn:task id="Task_Validate" name="Walidacja PIN i salda na rachunku SORBNET">
+      <bpmn:incoming>Flow_A1</bpmn:incoming>
+      <bpmn:outgoing>Flow_A2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_BlockFunds" name="Blokada środków na koncie nadawcy">
+      <bpmn:incoming>Flow_A2</bpmn:incoming>
+      <bpmn:outgoing>Flow_A3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_BuildXml" name="Generuj pacs.008 z IBAN sorbnetAccount + externalPaymentId SORB-...">
+      <bpmn:incoming>Flow_A3</bpmn:incoming>
+      <bpmn:outgoing>Flow_A4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sendTask id="SendTask_NBP" name="Wyślij pacs.008 do NBP SORBNET">
+      <bpmn:incoming>Flow_A4</bpmn:incoming>
+      <bpmn:outgoing>Flow_A5</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:intermediateCatchEvent id="CatchEvent_NbpResp" name="Odbiór pain.002 od NBP">
+      <bpmn:incoming>Flow_A5</bpmn:incoming>
+      <bpmn:outgoing>Flow_A6</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_NbpResp" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:exclusiveGateway id="Gateway_NbpStatus" name="Status pain.002?">
+      <bpmn:incoming>Flow_A6</bpmn:incoming>
+      <bpmn:outgoing>Flow_A_Settled</bpmn:outgoing>
+      <bpmn:outgoing>Flow_A_Rejected</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Complete" name="Zwolnienie blockedFunds, status PROCESSED">
+      <bpmn:incoming>Flow_A_Settled</bpmn:incoming>
+      <bpmn:outgoing>Flow_A7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Settled" name="Przelew rozliczony">
+      <bpmn:incoming>Flow_A7</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Return" name="Zwrot środków na konto klienta, status REJECTED">
+      <bpmn:incoming>Flow_A_Rejected</bpmn:incoming>
+      <bpmn:outgoing>Flow_A8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Rejected" name="Przelew odrzucony przez NBP">
+      <bpmn:incoming>Flow_A8</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_A1" sourceRef="StartEvent_BankA" targetRef="Task_Validate" />
+    <bpmn:sequenceFlow id="Flow_A2" sourceRef="Task_Validate" targetRef="Task_BlockFunds" />
+    <bpmn:sequenceFlow id="Flow_A3" sourceRef="Task_BlockFunds" targetRef="Task_BuildXml" />
+    <bpmn:sequenceFlow id="Flow_A4" sourceRef="Task_BuildXml" targetRef="SendTask_NBP" />
+    <bpmn:sequenceFlow id="Flow_A5" sourceRef="SendTask_NBP" targetRef="CatchEvent_NbpResp" />
+    <bpmn:sequenceFlow id="Flow_A6" sourceRef="CatchEvent_NbpResp" targetRef="Gateway_NbpStatus" />
+    <bpmn:sequenceFlow id="Flow_A_Settled" name="SETTLED" sourceRef="Gateway_NbpStatus" targetRef="Task_Complete" />
+    <bpmn:sequenceFlow id="Flow_A_Rejected" name="REJECTED" sourceRef="Gateway_NbpStatus" targetRef="Task_Return" />
+    <bpmn:sequenceFlow id="Flow_A7" sourceRef="Task_Complete" targetRef="EndEvent_Settled" />
+    <bpmn:sequenceFlow id="Flow_A8" sourceRef="Task_Return" targetRef="EndEvent_Rejected" />
+  </bpmn:process>
+  <bpmn:process id="Process_NBP" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_NBP">
+      <bpmn:lane id="Lane_NbpRtgs" name="Atomic RTGS settlement">
+        <bpmn:flowNodeRef>StartEvent_NbpInbox</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CheckReserve</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Liquidity</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_NotifyBankB</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_NbpDone</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_NbpReject</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AtomicSettle</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_NbpInbox" name="Otrzymano pacs.008 od Banku A">
+      <bpmn:outgoing>Flow_N1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_NbpInbox" />
+    </bpmn:startEvent>
+    <bpmn:task id="Task_CheckReserve" name="Sprawdź saldo rezerwy obowiązkowej Banku A">
+      <bpmn:incoming>Flow_N1</bpmn:incoming>
+      <bpmn:outgoing>Flow_N2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Liquidity" name="Rezerwa wystarcza?">
+      <bpmn:incoming>Flow_N2</bpmn:incoming>
+      <bpmn:outgoing>Flow_N_LiqOk</bpmn:outgoing>
+      <bpmn:outgoing>Flow_N_LiqBad</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_NotifyBankB" name="Wyślij MT910 do Banku B (uznanie konta)">
+      <bpmn:incoming>Flow_N3</bpmn:incoming>
+      <bpmn:outgoing>Flow_N4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_NbpDone" name="pain.002 SETTLED do Banku A">
+      <bpmn:incoming>Flow_N4</bpmn:incoming>
+      <bpmn:messageEventDefinition id="MED_NbpDone" />
+    </bpmn:endEvent>
+    <bpmn:endEvent id="EndEvent_NbpReject" name="pain.002 REJECTED do Banku A">
+      <bpmn:incoming>Flow_N_LiqBad</bpmn:incoming>
+      <bpmn:messageEventDefinition id="MED_NbpReject" />
+    </bpmn:endEvent>
+    <bpmn:task id="Task_AtomicSettle" name="Atomic settlement brutto: obciąż Bank A, uznaj Bank B">
+      <bpmn:incoming>Flow_N_LiqOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_N3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_N1" sourceRef="StartEvent_NbpInbox" targetRef="Task_CheckReserve" />
+    <bpmn:sequenceFlow id="Flow_N2" sourceRef="Task_CheckReserve" targetRef="Gateway_Liquidity" />
+    <bpmn:sequenceFlow id="Flow_N_LiqOk" name="TAK" sourceRef="Gateway_Liquidity" targetRef="Task_AtomicSettle" />
+    <bpmn:sequenceFlow id="Flow_N_LiqBad" name="NIE" sourceRef="Gateway_Liquidity" targetRef="EndEvent_NbpReject" />
+    <bpmn:sequenceFlow id="Flow_N3" sourceRef="Task_AtomicSettle" targetRef="Task_NotifyBankB" />
+    <bpmn:sequenceFlow id="Flow_N4" sourceRef="Task_NotifyBankB" targetRef="EndEvent_NbpDone" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_Sorbnet">
+      <bpmndi:BPMNShape id="Participant_Klient_di" bpmnElement="Participant_Klient" isHorizontal="true">
+        <dc:Bounds x="155" y="80" width="1700" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_BankA_di" bpmnElement="Participant_BankA" isHorizontal="true">
+        <dc:Bounds x="155" y="160" width="1700" height="440" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_BankBackend_di" bpmnElement="Lane_BankBackend" isHorizontal="true">
+        <dc:Bounds x="185" y="160" width="1670" height="440" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_BankA_di" bpmnElement="StartEvent_BankA">
+        <dc:Bounds x="220" y="342" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="210" y="385" width="56" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Validate_di" bpmnElement="Task_Validate">
+        <dc:Bounds x="290" y="320" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BlockFunds_di" bpmnElement="Task_BlockFunds">
+        <dc:Bounds x="490" y="320" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BuildXml_di" bpmnElement="Task_BuildXml">
+        <dc:Bounds x="690" y="320" width="220" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SendTask_NBP_di" bpmnElement="SendTask_NBP">
+        <dc:Bounds x="940" y="320" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CatchEvent_NbpResp_di" bpmnElement="CatchEvent_NbpResp">
+        <dc:Bounds x="1140" y="342" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1118" y="286" width="79" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_NbpStatus_di" bpmnElement="Gateway_NbpStatus" isMarkerVisible="true">
+        <dc:Bounds x="1205" y="335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1258" y="363" width="83" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Complete_di" bpmnElement="Task_Complete">
+        <dc:Bounds x="1305" y="240" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Settled_di" bpmnElement="EndEvent_Settled">
+        <dc:Bounds x="1535" y="262" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1531" y="305" width="49" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Return_di" bpmnElement="Task_Return">
+        <dc:Bounds x="1305" y="440" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Rejected_di" bpmnElement="EndEvent_Rejected">
+        <dc:Bounds x="1535" y="462" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1514" y="505" width="93" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_A1_di" bpmnElement="Flow_A1">
+        <di:waypoint x="256" y="360" />
+        <di:waypoint x="290" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A2_di" bpmnElement="Flow_A2">
+        <di:waypoint x="460" y="360" />
+        <di:waypoint x="490" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A3_di" bpmnElement="Flow_A3">
+        <di:waypoint x="660" y="360" />
+        <di:waypoint x="690" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A4_di" bpmnElement="Flow_A4">
+        <di:waypoint x="910" y="360" />
+        <di:waypoint x="940" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A5_di" bpmnElement="Flow_A5">
+        <di:waypoint x="1110" y="360" />
+        <di:waypoint x="1140" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A6_di" bpmnElement="Flow_A6">
+        <di:waypoint x="1176" y="360" />
+        <di:waypoint x="1205" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A_Settled_di" bpmnElement="Flow_A_Settled">
+        <di:waypoint x="1230" y="335" />
+        <di:waypoint x="1230" y="280" />
+        <di:waypoint x="1305" y="280" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1241" y="292" width="50" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A_Rejected_di" bpmnElement="Flow_A_Rejected">
+        <di:waypoint x="1230" y="385" />
+        <di:waypoint x="1230" y="480" />
+        <di:waypoint x="1305" y="480" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1240" y="440" width="59" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A7_di" bpmnElement="Flow_A7">
+        <di:waypoint x="1505" y="280" />
+        <di:waypoint x="1535" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A8_di" bpmnElement="Flow_A8">
+        <di:waypoint x="1505" y="480" />
+        <di:waypoint x="1535" y="480" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_NBP_di" bpmnElement="Participant_NBP" isHorizontal="true">
+        <dc:Bounds x="155" y="640" width="1700" height="380" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_NbpRtgs_di" bpmnElement="Lane_NbpRtgs" isHorizontal="true">
+        <dc:Bounds x="185" y="640" width="1670" height="380" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_NbpInbox_di" bpmnElement="StartEvent_NbpInbox">
+        <dc:Bounds x="220" y="782" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="214" y="825" width="56" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CheckReserve_di" bpmnElement="Task_CheckReserve">
+        <dc:Bounds x="290" y="760" width="210" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Liquidity_di" bpmnElement="Gateway_Liquidity" isMarkerVisible="true">
+        <dc:Bounds x="530" y="775" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="582" y="786" width="56" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_NotifyBankB_di" bpmnElement="Task_NotifyBankB">
+        <dc:Bounds x="900" y="680" width="220" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_NbpDone_di" bpmnElement="EndEvent_NbpDone">
+        <dc:Bounds x="1160" y="702" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1138" y="745" width="95" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_NbpReject_di" bpmnElement="EndEvent_NbpReject">
+        <dc:Bounds x="630" y="882" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="603" y="925" width="104" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AtomicSettle_di" bpmnElement="Task_AtomicSettle">
+        <dc:Bounds x="635" y="680" width="230" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_N1_di" bpmnElement="Flow_N1">
+        <di:waypoint x="256" y="800" />
+        <di:waypoint x="290" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_N2_di" bpmnElement="Flow_N2">
+        <di:waypoint x="500" y="800" />
+        <di:waypoint x="530" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_N_LiqOk_di" bpmnElement="Flow_N_LiqOk">
+        <di:waypoint x="555" y="775" />
+        <di:waypoint x="555" y="720" />
+        <di:waypoint x="635" y="720" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="564" y="735" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_N_LiqBad_di" bpmnElement="Flow_N_LiqBad">
+        <di:waypoint x="555" y="825" />
+        <di:waypoint x="555" y="900" />
+        <di:waypoint x="630" y="900" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="564" y="850" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_N3_di" bpmnElement="Flow_N3">
+        <di:waypoint x="865" y="720" />
+        <di:waypoint x="900" y="720" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_N4_di" bpmnElement="Flow_N4">
+        <di:waypoint x="1120" y="720" />
+        <di:waypoint x="1160" y="720" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_BankB_di" bpmnElement="Participant_BankB" isHorizontal="true">
+        <dc:Bounds x="155" y="1060" width="1700" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="MF_Init_di" bpmnElement="MF_Init">
+        <di:waypoint x="238" y="140" />
+        <di:waypoint x="238" y="342" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="252" y="187" width="98" height="66" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_SendToNbp_di" bpmnElement="MF_SendToNbp">
+        <di:waypoint x="1025" y="400" />
+        <di:waypoint x="1025" y="615" />
+        <di:waypoint x="238" y="615" />
+        <di:waypoint x="238" y="782" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="579" y="605" width="162" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_NbpSettled_di" bpmnElement="MF_NbpSettled">
+        <di:waypoint x="1178" y="702" />
+        <di:waypoint x="1178" y="620" />
+        <di:waypoint x="1158" y="620" />
+        <di:waypoint x="1158" y="378" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1192" y="613" width="95" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_NbpRejected_di" bpmnElement="MF_NbpRejected">
+        <di:waypoint x="648" y="882" />
+        <di:waypoint x="648" y="625" />
+        <di:waypoint x="1158" y="625" />
+        <di:waypoint x="1158" y="378" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="787" y="613" width="187" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_NotifyBankB_di" bpmnElement="MF_NotifyBankB">
+        <di:waypoint x="1010" y="760" />
+        <di:waypoint x="1010" y="1060" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="945" y="903" width="50" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

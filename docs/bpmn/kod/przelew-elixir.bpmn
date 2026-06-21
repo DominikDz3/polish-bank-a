@@ -1,0 +1,444 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_Elixir" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.16.0">
+  <bpmn:collaboration id="Collaboration_Elixir">
+    <bpmn:participant id="Participant_Klient" name="Klient" />
+    <bpmn:participant id="Participant_BankA" name="Bank A" processRef="Process_BankA" />
+    <bpmn:participant id="Participant_KIR" name="KIR (jednostka rozliczeniowa ELIXIR)" processRef="Process_KIR" />
+    <bpmn:participant id="Participant_BankB" name="Bank B (odbiorca)" />
+    <bpmn:messageFlow id="MF_Init" name="POST /api/external-transfers (PIN + JWT)" sourceRef="Participant_Klient" targetRef="StartEvent_BankA" />
+    <bpmn:messageFlow id="MF_SendToKir" name="pacs.008 (kanał SFTP)" sourceRef="SendTask_ToKir" targetRef="StartEvent_KirInbox" />
+    <bpmn:messageFlow id="MF_KirSettled" name="Status PROCESSED" sourceRef="EndEvent_KirDone" targetRef="CatchEvent_KirResp" />
+    <bpmn:messageFlow id="MF_KirRejected" name="Status REJECTED (unwinding)" sourceRef="EndEvent_Unwinding" targetRef="CatchEvent_KirResp" />
+    <bpmn:messageFlow id="MF_NotifyBankB" name="MT pacs.002 + uznanie konta odbiorcy" sourceRef="Task_NotifyBankB" targetRef="Participant_BankB" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_BankA" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_BankA">
+      <bpmn:lane id="Lane_BankBackend" name="Backend Bank A">
+        <bpmn:flowNodeRef>StartEvent_BankA</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Validate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Amount</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_RejAmount</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_BlockFunds</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_BuildXml</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>SendTask_ToKir</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>CatchEvent_KirResp</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_KirStatus</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Complete</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Settled</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Return</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_RejKir</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_BankA" name="Klient zlecił przelew ELIXIR">
+      <bpmn:outgoing>Flow_A1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_Init" />
+    </bpmn:startEvent>
+    <bpmn:task id="Task_Validate" name="Walidacja PIN i salda dostępnego">
+      <bpmn:incoming>Flow_A1</bpmn:incoming>
+      <bpmn:outgoing>Flow_A2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Amount" name="Kwota poniżej 1 000 000 PLN?">
+      <bpmn:incoming>Flow_A2</bpmn:incoming>
+      <bpmn:outgoing>Flow_A_Ok</bpmn:outgoing>
+      <bpmn:outgoing>Flow_A_RejAmt</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="EndEvent_RejAmount" name="Odrzucono: limit ELIXIR przekroczony">
+      <bpmn:incoming>Flow_A_RejAmt</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_BlockFunds" name="Blokada środków: balance -= amount, blockedFunds += amount">
+      <bpmn:incoming>Flow_A_Ok</bpmn:incoming>
+      <bpmn:outgoing>Flow_A3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_BuildXml" name="Generuj pacs.008 + externalPaymentId ELIX-...">
+      <bpmn:incoming>Flow_A3</bpmn:incoming>
+      <bpmn:outgoing>Flow_A4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sendTask id="SendTask_ToKir" name="Wyślij do KIR (status SENT)">
+      <bpmn:incoming>Flow_A4</bpmn:incoming>
+      <bpmn:outgoing>Flow_A5</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:intermediateCatchEvent id="CatchEvent_KirResp" name="Odbiór statusu z KIR (poller)">
+      <bpmn:incoming>Flow_A5</bpmn:incoming>
+      <bpmn:outgoing>Flow_A6</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_KirResp" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:exclusiveGateway id="Gateway_KirStatus" name="Status od KIR?">
+      <bpmn:incoming>Flow_A6</bpmn:incoming>
+      <bpmn:outgoing>Flow_A_Settled</bpmn:outgoing>
+      <bpmn:outgoing>Flow_A_RejKir</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Complete" name="status = PROCESSED, blockedFunds -= amount">
+      <bpmn:incoming>Flow_A_Settled</bpmn:incoming>
+      <bpmn:outgoing>Flow_A7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Settled" name="Przelew rozliczony">
+      <bpmn:incoming>Flow_A7</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Return" name="status = REJECTED, balance += amount, blockedFunds -= amount">
+      <bpmn:incoming>Flow_A_RejKir</bpmn:incoming>
+      <bpmn:outgoing>Flow_A8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_RejKir" name="Przelew odrzucony przez KIR">
+      <bpmn:incoming>Flow_A8</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_A1" sourceRef="StartEvent_BankA" targetRef="Task_Validate" />
+    <bpmn:sequenceFlow id="Flow_A2" sourceRef="Task_Validate" targetRef="Gateway_Amount" />
+    <bpmn:sequenceFlow id="Flow_A_Ok" name="TAK" sourceRef="Gateway_Amount" targetRef="Task_BlockFunds" />
+    <bpmn:sequenceFlow id="Flow_A_RejAmt" name="NIE" sourceRef="Gateway_Amount" targetRef="EndEvent_RejAmount" />
+    <bpmn:sequenceFlow id="Flow_A3" sourceRef="Task_BlockFunds" targetRef="Task_BuildXml" />
+    <bpmn:sequenceFlow id="Flow_A4" sourceRef="Task_BuildXml" targetRef="SendTask_ToKir" />
+    <bpmn:sequenceFlow id="Flow_A5" sourceRef="SendTask_ToKir" targetRef="CatchEvent_KirResp" />
+    <bpmn:sequenceFlow id="Flow_A6" sourceRef="CatchEvent_KirResp" targetRef="Gateway_KirStatus" />
+    <bpmn:sequenceFlow id="Flow_A_Settled" name="PROCESSED" sourceRef="Gateway_KirStatus" targetRef="Task_Complete" />
+    <bpmn:sequenceFlow id="Flow_A_RejKir" name="REJECTED" sourceRef="Gateway_KirStatus" targetRef="Task_Return" />
+    <bpmn:sequenceFlow id="Flow_A7" sourceRef="Task_Complete" targetRef="EndEvent_Settled" />
+    <bpmn:sequenceFlow id="Flow_A8" sourceRef="Task_Return" targetRef="EndEvent_RejKir" />
+  </bpmn:process>
+  <bpmn:process id="Process_KIR" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_KIR">
+      <bpmn:lane id="Lane_KirClearing" name="Rozliczenie sesyjne">
+        <bpmn:flowNodeRef>StartEvent_KirInbox</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_QueueSession</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>IntermediateTimer_Session</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Netting</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Liquidity</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Settlement</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_KirDone</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Unwinding</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Unwinding</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_NotifyBankB</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_KirInbox" name="Otrzymano pacs.008 od Banku A">
+      <bpmn:outgoing>Flow_K1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MED_KirInbox" />
+    </bpmn:startEvent>
+    <bpmn:task id="Task_QueueSession" name="Dodaj do kolejki najbliższej sesji">
+      <bpmn:incoming>Flow_K1</bpmn:incoming>
+      <bpmn:outgoing>Flow_K2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:intermediateCatchEvent id="IntermediateTimer_Session" name="Start sesji (3x dziennie)">
+      <bpmn:incoming>Flow_K2</bpmn:incoming>
+      <bpmn:outgoing>Flow_K3</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TED_Session" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:task id="Task_Netting" name="Wielostronny netting — obliczenie pozycji banków">
+      <bpmn:incoming>Flow_K3</bpmn:incoming>
+      <bpmn:outgoing>Flow_K4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Liquidity" name="Płynność banku w NBP OK?">
+      <bpmn:incoming>Flow_K4</bpmn:incoming>
+      <bpmn:outgoing>Flow_K_LiqOk</bpmn:outgoing>
+      <bpmn:outgoing>Flow_K_LiqBad</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Settlement" name="Settlement — przesunięcie środków netto między bankami">
+      <bpmn:incoming>Flow_K_LiqOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_K5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_KirDone" name="Sesja zamknięta + raport">
+      <bpmn:incoming>Flow_K6</bpmn:incoming>
+      <bpmn:messageEventDefinition id="MED_KirDone" />
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Unwinding" name="Unwinding — wykluczenie banku z sesji">
+      <bpmn:incoming>Flow_K_LiqBad</bpmn:incoming>
+      <bpmn:outgoing>Flow_K7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Unwinding" name="Bank wykluczony z sesji">
+      <bpmn:incoming>Flow_K7</bpmn:incoming>
+      <bpmn:messageEventDefinition id="MED_Unwinding" />
+    </bpmn:endEvent>
+    <bpmn:task id="Task_NotifyBankB" name="Wysłanie komunikatu uznaniowego do Banku B">
+      <bpmn:incoming>Flow_K5</bpmn:incoming>
+      <bpmn:outgoing>Flow_K6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_K1" sourceRef="StartEvent_KirInbox" targetRef="Task_QueueSession" />
+    <bpmn:sequenceFlow id="Flow_K2" sourceRef="Task_QueueSession" targetRef="IntermediateTimer_Session" />
+    <bpmn:sequenceFlow id="Flow_K3" sourceRef="IntermediateTimer_Session" targetRef="Task_Netting" />
+    <bpmn:sequenceFlow id="Flow_K4" sourceRef="Task_Netting" targetRef="Gateway_Liquidity" />
+    <bpmn:sequenceFlow id="Flow_K_LiqOk" name="TAK" sourceRef="Gateway_Liquidity" targetRef="Task_Settlement" />
+    <bpmn:sequenceFlow id="Flow_K_LiqBad" name="NIE" sourceRef="Gateway_Liquidity" targetRef="Task_Unwinding" />
+    <bpmn:sequenceFlow id="Flow_K5" sourceRef="Task_Settlement" targetRef="Task_NotifyBankB" />
+    <bpmn:sequenceFlow id="Flow_K6" sourceRef="Task_NotifyBankB" targetRef="EndEvent_KirDone" />
+    <bpmn:sequenceFlow id="Flow_K7" sourceRef="Task_Unwinding" targetRef="EndEvent_Unwinding" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_Elixir">
+      <bpmndi:BPMNShape id="Participant_Klient_di" bpmnElement="Participant_Klient" isHorizontal="true">
+        <dc:Bounds x="155" y="80" width="1700" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_BankA_di" bpmnElement="Participant_BankA" isHorizontal="true">
+        <dc:Bounds x="155" y="160" width="1700" height="440" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_BankBackend_di" bpmnElement="Lane_BankBackend" isHorizontal="true">
+        <dc:Bounds x="185" y="160" width="1670" height="440" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_BankA_di" bpmnElement="StartEvent_BankA">
+        <dc:Bounds x="220" y="332" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="210" y="375" width="56" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Validate_di" bpmnElement="Task_Validate">
+        <dc:Bounds x="290" y="310" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Amount_di" bpmnElement="Gateway_Amount" isMarkerVisible="true">
+        <dc:Bounds x="455" y="325" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="441" y="276" width="78" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_RejAmount_di" bpmnElement="EndEvent_RejAmount">
+        <dc:Bounds x="462" y="452" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="440" y="495" width="80" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BlockFunds_di" bpmnElement="Task_BlockFunds">
+        <dc:Bounds x="540" y="310" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BuildXml_di" bpmnElement="Task_BuildXml">
+        <dc:Bounds x="730" y="310" width="180" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SendTask_ToKir_di" bpmnElement="SendTask_ToKir">
+        <dc:Bounds x="935" y="310" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CatchEvent_KirResp_di" bpmnElement="CatchEvent_KirResp">
+        <dc:Bounds x="1120" y="332" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1106" y="270" width="63" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_KirStatus_di" bpmnElement="Gateway_KirStatus" isMarkerVisible="true">
+        <dc:Bounds x="1185" y="325" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1243" y="343" width="74" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Complete_di" bpmnElement="Task_Complete">
+        <dc:Bounds x="1290" y="230" width="190" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Settled_di" bpmnElement="EndEvent_Settled">
+        <dc:Bounds x="1510" y="252" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1506" y="295" width="49" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Return_di" bpmnElement="Task_Return">
+        <dc:Bounds x="1290" y="430" width="190" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_RejKir_di" bpmnElement="EndEvent_RejKir">
+        <dc:Bounds x="1510" y="452" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1484" y="495" width="93" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_A1_di" bpmnElement="Flow_A1">
+        <di:waypoint x="256" y="350" />
+        <di:waypoint x="290" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A2_di" bpmnElement="Flow_A2">
+        <di:waypoint x="430" y="350" />
+        <di:waypoint x="455" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A_Ok_di" bpmnElement="Flow_A_Ok">
+        <di:waypoint x="505" y="350" />
+        <di:waypoint x="540" y="350" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="514" y="332" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A_RejAmt_di" bpmnElement="Flow_A_RejAmt">
+        <di:waypoint x="480" y="375" />
+        <di:waypoint x="480" y="452" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="489" y="400" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A3_di" bpmnElement="Flow_A3">
+        <di:waypoint x="710" y="350" />
+        <di:waypoint x="730" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A4_di" bpmnElement="Flow_A4">
+        <di:waypoint x="910" y="350" />
+        <di:waypoint x="935" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A5_di" bpmnElement="Flow_A5">
+        <di:waypoint x="1095" y="350" />
+        <di:waypoint x="1120" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A6_di" bpmnElement="Flow_A6">
+        <di:waypoint x="1156" y="350" />
+        <di:waypoint x="1185" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A_Settled_di" bpmnElement="Flow_A_Settled">
+        <di:waypoint x="1210" y="325" />
+        <di:waypoint x="1210" y="270" />
+        <di:waypoint x="1290" y="270" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1217" y="283" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A_RejKir_di" bpmnElement="Flow_A_RejKir">
+        <di:waypoint x="1210" y="375" />
+        <di:waypoint x="1210" y="470" />
+        <di:waypoint x="1290" y="470" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1219" y="430" width="59" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A7_di" bpmnElement="Flow_A7">
+        <di:waypoint x="1480" y="270" />
+        <di:waypoint x="1510" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_A8_di" bpmnElement="Flow_A8">
+        <di:waypoint x="1480" y="470" />
+        <di:waypoint x="1510" y="470" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_KIR_di" bpmnElement="Participant_KIR" isHorizontal="true">
+        <dc:Bounds x="155" y="640" width="1700" height="380" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_KirClearing_di" bpmnElement="Lane_KirClearing" isHorizontal="true">
+        <dc:Bounds x="185" y="640" width="1670" height="380" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_KirInbox_di" bpmnElement="StartEvent_KirInbox">
+        <dc:Bounds x="220" y="782" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="208" y="825" width="60" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_QueueSession_di" bpmnElement="Task_QueueSession">
+        <dc:Bounds x="290" y="760" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="IntermediateTimer_Session_di" bpmnElement="IntermediateTimer_Session">
+        <dc:Bounds x="475" y="782" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="462" y="825" width="67" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Netting_di" bpmnElement="Task_Netting">
+        <dc:Bounds x="545" y="760" width="190" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Liquidity_di" bpmnElement="Gateway_Liquidity" isMarkerVisible="true">
+        <dc:Bounds x="760" y="775" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="811" y="776" width="78" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Settlement_di" bpmnElement="Task_Settlement">
+        <dc:Bounds x="860" y="670" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_KirDone_di" bpmnElement="EndEvent_KirDone">
+        <dc:Bounds x="1320" y="692" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1304" y="735" width="91" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Unwinding_di" bpmnElement="Task_Unwinding">
+        <dc:Bounds x="860" y="890" width="220" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Unwinding_di" bpmnElement="EndEvent_Unwinding">
+        <dc:Bounds x="1110" y="912" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1086" y="955" width="85" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_NotifyBankB_di" bpmnElement="Task_NotifyBankB">
+        <dc:Bounds x="1100" y="670" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_K1_di" bpmnElement="Flow_K1">
+        <di:waypoint x="256" y="800" />
+        <di:waypoint x="290" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_K2_di" bpmnElement="Flow_K2">
+        <di:waypoint x="450" y="800" />
+        <di:waypoint x="475" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_K3_di" bpmnElement="Flow_K3">
+        <di:waypoint x="511" y="800" />
+        <di:waypoint x="545" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_K4_di" bpmnElement="Flow_K4">
+        <di:waypoint x="735" y="800" />
+        <di:waypoint x="760" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_K_LiqOk_di" bpmnElement="Flow_K_LiqOk">
+        <di:waypoint x="785" y="775" />
+        <di:waypoint x="785" y="710" />
+        <di:waypoint x="860" y="710" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="794" y="735" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_K_LiqBad_di" bpmnElement="Flow_K_LiqBad">
+        <di:waypoint x="785" y="825" />
+        <di:waypoint x="785" y="930" />
+        <di:waypoint x="860" y="930" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="794" y="860" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_K5_di" bpmnElement="Flow_K5">
+        <di:waypoint x="1060" y="710" />
+        <di:waypoint x="1100" y="710" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_K6_di" bpmnElement="Flow_K6">
+        <di:waypoint x="1300" y="710" />
+        <di:waypoint x="1320" y="710" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_K7_di" bpmnElement="Flow_K7">
+        <di:waypoint x="1080" y="930" />
+        <di:waypoint x="1110" y="930" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_BankB_di" bpmnElement="Participant_BankB" isHorizontal="true">
+        <dc:Bounds x="155" y="1060" width="1700" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="MF_Init_di" bpmnElement="MF_Init">
+        <di:waypoint x="238" y="140" />
+        <di:waypoint x="238" y="332" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="248" y="215" width="204" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_SendToKir_di" bpmnElement="MF_SendToKir">
+        <di:waypoint x="1015" y="390" />
+        <di:waypoint x="1015" y="615" />
+        <di:waypoint x="238" y="615" />
+        <di:waypoint x="238" y="782" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="614" y="618" width="113" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_KirSettled_di" bpmnElement="MF_KirSettled">
+        <di:waypoint x="1338" y="692" />
+        <di:waypoint x="1338" y="615" />
+        <di:waypoint x="1138" y="615" />
+        <di:waypoint x="1138" y="368" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1148" y="563" width="104" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_KirRejected_di" bpmnElement="MF_KirRejected">
+        <di:waypoint x="1128" y="912" />
+        <di:waypoint x="1128" y="625" />
+        <di:waypoint x="1138" y="625" />
+        <di:waypoint x="1138" y="368" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1004" y="601" width="126" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_NotifyBankB_di" bpmnElement="MF_NotifyBankB">
+        <di:waypoint x="1200" y="750" />
+        <di:waypoint x="1200" y="1060" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1047" y="820" width="88" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
