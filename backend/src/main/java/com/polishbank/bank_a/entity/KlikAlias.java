@@ -26,8 +26,15 @@ public class KlikAlias {
     private Account account;
 
     private String alias;
+
+    @Column(name = "klik_alias_id")
+    private UUID klikAliasId;
+
     private boolean active;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "deactivated_at")
+    private LocalDateTime deactivatedAt;
 }
