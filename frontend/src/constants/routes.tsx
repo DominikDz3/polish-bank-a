@@ -5,6 +5,7 @@ export const ROUTES = {
     SETUP_PIN: '/setup-pin',
     DASHBOARD: '/dashboard',
     INTERNAL_TRANSFER: '/transfer/internal',
+    SWIFT_TRANSFER: '/transfer/swift',
     TRANSACTION_HISTORY: '/history/:accountId',
     KLIK_CODE: '/klik/code',
     ADD_JUNIOR: '/junior/add',
