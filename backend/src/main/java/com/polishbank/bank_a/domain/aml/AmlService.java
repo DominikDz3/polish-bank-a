@@ -3,13 +3,12 @@ package com.polishbank.bank_a.domain.aml;
 import com.polishbank.bank_a.domain.aml.dto.AmlHoldView;
 import com.polishbank.bank_a.domain.user.User;
 import com.polishbank.bank_a.domain.user.UserRepository;
-import com.polishbank.bank_a.entity.*;
+import com.polishbank.bank_a.entity.AmlHold;
 import com.polishbank.bank_a.repository.AmlHoldRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -20,37 +19,7 @@ public class AmlService {
 
     private final AmlHoldRepository holdRepository;
     private final UserRepository userRepository;
-
-    @Transactional
-    public AmlHold createHold(
-            User user,
-            Account account,
-            AmlTransactionType type,
-            Transaction transaction,
-            ExternalTransfer externalTransfer,
-            SwiftTransfer swiftTransfer,
-            AmlResult evaluation,
-            BigDecimal amount,
-            String currency,
-            String receiverInfo
-    ) {
-        AmlHold hold = AmlHold.builder()
-                .user(user)
-                .account(account)
-                .holdType(type.name())
-                .transaction(transaction)
-                .externalTransfer(externalTransfer)
-                .swiftTransfer(swiftTransfer)
-                .reason(evaluation.reason())
-                .triggeredRule(evaluation.ruleCode())
-                .amount(amount)
-                .currency(currency)
-                .receiverInfo(receiverInfo)
-                .status(AmlHoldStatus.AWAITING_EXPLANATION)
-                .createdBy("AML_ENGINE")
-                .build();
-        return holdRepository.save(hold);
-    }
+    private final AmlDecisionExecutor executor;
 
     public List<AmlHoldView> listMyHolds(String userEmail) {
         User user = userRepository.findByEmail(userEmail).orElseThrow();
@@ -100,7 +69,7 @@ public class AmlService {
         AmlHold hold = loadActive(holdId);
         User admin = userRepository.findByEmail(adminEmail).orElseThrow();
 
-
+        executor.executeApprove(hold);
 
         hold.setStatus(AmlHoldStatus.APPROVED);
         hold.setDecisionAt(LocalDateTime.now());
@@ -114,6 +83,8 @@ public class AmlService {
     public AmlHoldView reject(UUID holdId, String adminEmail, String note) {
         AmlHold hold = loadActive(holdId);
         User admin = userRepository.findByEmail(adminEmail).orElseThrow();
+
+        executor.executeReject(hold);
 
         hold.setStatus(AmlHoldStatus.REJECTED);
         hold.setDecisionAt(LocalDateTime.now());

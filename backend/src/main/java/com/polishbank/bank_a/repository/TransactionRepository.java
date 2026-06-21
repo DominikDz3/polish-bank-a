@@ -27,4 +27,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
         @Param("cardId") UUID cardId,
         @Param("startOfDay") LocalDateTime startOfDay,
         @Param("startOfNextDay") LocalDateTime startOfNextDay);
+
+    long countBySenderAccount_IdAndReceiverAccountNumberAndCreatedAtAfter(
+        java.util.UUID senderAccountId,
+        String receiverAccountNumber,
+        java.time.LocalDateTime after);
+
+    long countBySenderAccount_IdAndReceiverAccountNumber(
+        java.util.UUID senderAccountId,
+        String receiverAccountNumber);
 }
