@@ -64,20 +64,126 @@ System bankowy (BANK A) -> SFTP -> KIR -> SFTP -> System bankowy (BANK B)
   - **Sytuacja** Użytkownik próbuje wysłać przelew na kwotę równą lub wyższą niż milion złotych.
   - **Obsługa** Regulamin Kir dla systemu Elixir odrzuca takie transakcje ponieważ limit to dokładnie 999 999,99 PLN. W takim wypadku walidacja musi nastąpić jeszcze zanim żądanie w ogóle trafi do kolejki wychodzącej.
 
-### 4.2 ELIXIR
-*TBD*
+### 4.2 Express ELIXIR
 
-### 4.3 Express ELIXIR
-*TBD*
+Express ELIXIR to rozszerzenie systemu KIR dla przelewów natychmiastowych w PLN, działające w trybie **24/7/365** poza standardowym harmonogramem sesyjnym. Każda transakcja rozliczana jest indywidualnie i w czasie rzeczywistym — środki są dostępne na koncie odbiorcy w drugim banku w czasie kilku sekund od zlecenia. Banki uczestniczące utrzymują w KIR osobne konta techniczne wstępnie zasilone płynnością, dzięki czemu nie ma konieczności czekania na sesję rozliczeniową.
 
-### 4.4 SORBNET3
-*TBD*
+#### 4.2.1 Architektura
 
-### 4.5 SWIFT
-*TBD*
+Komunikacja odbywa się przez REST API z synchroniczną odpowiedzią — bank-nadawca buduje DTO transakcji (JSON), wysyła do operatora Express ELIXIR, a ten natychmiast księguje na kontach technicznych obu banków i potwierdza status.
 
-### 4.6 BLIK
-*TBD*
+System bankowy (BANK A) → REST (JSON DTO) → Express ELIXIR (KIR) → REST → System bankowy (BANK B)
+
+Bank nadawcy po pozytywnej odpowiedzi zwalnia blokadę środków i finalizuje księgowanie wychodzące. Brak asynchronicznego pollera — odpowiedź `PROCESSED` przychodzi w tej samej odpowiedzi co request.
+
+#### 4.2.2 Sytuacje brzegowe
+
+1. **Limit kwotowy dla pojedynczego przelewu**
+   - **Sytuacja:** Klient próbuje zlecić przelew Express ELIXIR powyżej limitu (zwykle 100 000 PLN).
+   - **Obsługa:** Walidacja po stronie banku nadawcy blokuje żądanie przed wysłaniem. Operator KLIK pokazuje sugestię użycia SORBNET3 dla wyższych kwot.
+
+2. **Niewystarczająca płynność banku w Express ELIXIR**
+   - **Sytuacja:** Konto techniczne banku-nadawcy w KIR ma zbyt niski stan żeby pokryć przelew.
+   - **Obsługa:** Operator Express ELIXIR zwraca `REJECTED` z kodem `INSUFFICIENT_LIQUIDITY`. Bank-nadawca zwraca środki klientowi i alarmuje dział treasury żeby uzupełnić płynność.
+
+3. **Awaria operatora poza godzinami sesji ELIXIR**
+   - **Sytuacja:** Klient zleca przelew natychmiastowy w nocy/weekend, operator Express ELIXIR niedostępny.
+   - **Obsługa:** Bank zwraca status `REJECTED` z komunikatem "system chwilowo niedostępny, spróbuj za chwilę lub użyj zwykłego ELIXIR-a w najbliższą sesję". Środki nie są blokowane.
+
+### 4.3 SORBNET3
+
+System Obsługi Rachunków Bankowych Narodowego Banku Polskiego — **RTGS** (Real-Time Gross Settlement) prowadzony przez NBP, służący do rozliczeń **wysokokwotowych** w PLN między bankami komercyjnymi, KDPW, KIR i samym NBP. Każda transakcja rozliczana jest **indywidualnie, brutto, w czasie rzeczywistym** na rachunkach technicznych banków prowadzonych w NBP — bez netting'u, bez sesji. System działa w godzinach pracy NBP (07:30–18:00 w dni robocze).
+
+#### 4.3.1 Architektura
+
+Komunikat ISO 20022 `pacs.008` w XML zgodnie z `SttlmMtd=CLRG` i kodem `SORBNET` w nagłówku. Bank-nadawca buduje XML, wysyła do operatora SORBNET3 (NBP), ten księguje natychmiast na kontach technicznych banków i potwierdza synchronicznie statusem `SETTLED`.
+
+System bankowy (BANK A) → REST (pacs.008 XML) → SORBNET3 (NBP) → REST (pain.002 XML) → System bankowy (BANK B)
+
+W realnym SORBNET3 bank-odbiorca otrzymuje forwarded komunikat pacs.008 i wykonuje wewnętrzne uznanie konta klienta końcowego. W uproszczonym mockowanym wariancie symulator obsługuje tylko settlement między kontami technicznymi banków.
+
+#### 4.3.2 Sytuacje brzegowe
+
+1. **Próba przelewu poza godzinami pracy NBP**
+   - **Sytuacja:** Klient zleca przelew SORBNET3 w sobotę lub po 18:00.
+   - **Obsługa:** Bank-nadawca blokuje żądanie z komunikatem "SORBNET3 działa w godz. 07:30–18:00 w dni robocze". Klient może kolejkować przelew do następnego dnia roboczego lub użyć Express ELIXIR (jeśli kwota mieści się w limicie).
+
+2. **Próba przelewu niskokwotowego**
+   - **Sytuacja:** Klient zleca SORBNET3 na kwotę poniżej progu (np. 500 PLN).
+   - **Obsługa:** Walidacja banku-nadawcy odrzuca z komunikatem o opłacie nieproporcjonalnej do kwoty (typowa opłata SORBNET3 to ~30 PLN). Sugestia użycia ELIXIR-a lub Express ELIXIR.
+
+3. **Bank-odbiorca nieuczestniczący w SORBNET3**
+   - **Sytuacja:** BICFI banku odbiorcy nie ma w tabeli uczestników NBP.
+   - **Obsługa:** Operator SORBNET3 zwraca `REJECTED` z kodem `UNKNOWN_PARTICIPANT`. Bank-nadawca odblokowuje środki i informuje klienta że bank odbiorcy nie obsługuje SORBNET-u — alternatywą jest ELIXIR.
+
+### 4.4 SWIFT
+
+**Society for Worldwide Interbank Financial Telecommunication** — globalna sieć wymiany komunikatów finansowych pomiędzy ponad 11 000 instytucjami w ~200 krajach. SWIFT sam w sobie **nie jest systemem rozliczeniowym** ani nie przekazuje pieniędzy — jest standardem komunikacji (formaty MT i nowsze ISO 20022) służącym do bezpiecznego przekazywania zleceń płatniczych między bankami, które rozliczają się następnie na rachunkach korespondencyjnych (nostro/loro) lub przez clearing houses w docelowych walutach. Z perspektywy banku detalicznego SWIFT odpowiada za **przelewy zagraniczne i walutowe**.
+
+#### 4.4.1 Architektura
+
+Bank-nadawca buduje komunikat `pacs.008` w XML, podpisuje OAuth2 tokenem i wysyła do middleware SWIFT. Middleware routuje przelew przez sieć banków pośredniczących (multi-hop) zgodnie z grafem łączności BIC ↔ BIC. Statusy są asynchroniczne — webhook od middleware przychodzi z `IN_TRANSIT`, `SETTLED` lub `RETURN`.
+
+System bankowy (BANK A) → OAuth2 + REST (pacs.008) → Middleware SWIFT → wiele hopów → BIC docelowy
+
+Bank-odbiorca odczytuje `CdtrAcct/IBAN` z komunikatu i wykonuje wewnętrzne uznanie konta klienta końcowego. Rozliczenie finansowe między bankami odbywa się poza warstwą komunikacyjną, na nostro/loro.
+
+#### 4.4.2 Sytuacje brzegowe
+
+1. **Bank lub konto odbiorcy nie istnieje**
+   - **Sytuacja:** Komunikat dociera do banku docelowego, ale podany IBAN nie istnieje w jego systemie (zamknięty, błędny, fraud).
+   - **Obsługa:** Bank-odbiorca generuje `RETURN` (komunikat zwrotny `pacs.004`), który wraca tą samą drogą do banku-nadawcy. Webhook middleware przekazuje go do naszego systemu, ten odblokowuje środki klientowi i ustawia status `RETURNED` z przyczyną.
+
+2. **Brak ścieżki routingu między BIC**
+   - **Sytuacja:** Middleware nie zna trasy z `PLBKPL01XXX` do BIC odbiorcy (np. mały bank z egzotycznego kraju).
+   - **Obsługa:** Middleware zwraca synchronicznie 404 `Route not found`. Bank-nadawca odblokowuje środki i informuje klienta że ten bank nie jest osiągalny w sieci SWIFT.
+
+3. **Niezgodność waluty z preferencjami banku pośredniczącego**
+   - **Sytuacja:** Przelew w egzotycznej walucie wymaga konwersji przez bank pośredniczący, który nie wspiera tej pary walutowej.
+   - **Obsługa:** Bank pośredniczący zwraca komunikat zwrotny z kodem `CURRENCY_UNSUPPORTED`. Środki wracają do banku-nadawcy, status `RETURNED`. Klient otrzymuje powiadomienie żeby skorzystać z innej waluty rozliczeniowej.
+
+4. **Naliczenie opłat (OUR/SHA/BEN)**
+   - **Sytuacja:** Klient zaznaczył `OUR` (płaci nadawca), middleware zwraca dodatkowy webhook `X-SWIFT-Fee-For` z kwotą opłaty od banku pośredniczącego.
+   - **Obsługa:** System odnotowuje opłatę w `SwiftTransfer.feeIntermediary`, doliczając ją do obciążenia konta klienta. Klient widzi w historii rozbicie opłat (sender / receiver / intermediary).
+
+### 4.5 BLIK / KLIK
+
+Polski system płatności mobilnych prowadzony przez Polski Standard Płatności (PSP) — w naszej implementacji występuje pod nazwą **KLIK**. System nie jest klasycznym rozliczeniem międzybankowym, lecz **warstwą tożsamości i autoryzacji** nad istniejącymi torami płatniczymi (kartowymi, Express ELIXIR, wewnętrznymi przelewami banku). Obsługuje dwie główne ścieżki:
+
+- **Kod KLIK przy płatności u sprzedawcy (C2B)** — klient generuje w aplikacji 6-cyfrowy kod ważny ~2 minuty, sprzedawca przekazuje go acquirerowi, ten woła KLIK, KLIK woła bank klienta, klient potwierdza PIN-em w aplikacji, bank obciąża rachunek.
+- **Przelew na telefon (P2P)** — klient rejestruje swój numer telefonu jako alias w KLIK z powiązaniem do IBAN. Inny klient (z dowolnego banku) wysyła na ten numer, jego bank wykonuje lookup w KLIK, otrzymuje IBAN odbiorcy i wykonuje przelew **poza KLIK** — torem Express ELIXIR (off-us) lub wewnętrznie (on-us).
+
+#### 4.5.1 Architektura
+
+KLIK to centralna platforma autoryzacji + księga aliasów. Wszystkie banki uczestniczące mają osobne klucze API i statystyki aktywacji modułów (`c2b_enabled`, `p2p_enabled`).
+
+**C2B (kod):**
+
+System bankowy (BANK A) → REST (generate code) → KLIK → kod 6-cyfrowy → klient → POS → Acquirer → REST → KLIK → webhook authorize → System bankowy (BANK A) → potwierdzenie PIN-em → REST (confirm) → KLIK
+
+**P2P (na telefon):**
+
+System bankowy (BANK A) → REST (lookup phone) → KLIK → {bank_code, IBAN} → BANK A wykonuje przelew Express ELIXIR (off-us) lub wewnętrzny (on-us) → poza KLIK
+
+KLIK nigdy nie uczestniczy w fizycznym transferze środków P2P — zwraca wyłącznie routing.
+
+#### 4.5.2 Sytuacje brzegowe
+
+1. **Wygaśnięcie kodu KLIK przed potwierdzeniem**
+   - **Sytuacja:** Klient wygenerował kod, ale nie podał go u sprzedawcy w ciągu 2 minut.
+   - **Obsługa:** Bank odbiera webhook autoryzacyjny po wygaśnięciu — odrzuca z kodem `EXPIRED`. KLIK marketuje kod jako nieaktywny, sprzedawca informowany. Klient generuje nowy kod.
+
+2. **Brak rejestracji numeru w KLIK przy P2P**
+   - **Sytuacja:** Klient próbuje wysłać przelew na telefon na numer, który nie ma aktywnego aliasu.
+   - **Obsługa:** Lookup zwraca `404_ALIAS_NOT_FOUND`. Bank-nadawca wyświetla klientowi komunikat "ten numer nie jest zarejestrowany w KLIK — możesz wysłać klasyczny przelew na IBAN".
+
+3. **Próba rejestracji numeru już zarejestrowanego w innym banku**
+   - **Sytuacja:** Klient banku A chce zarejestrować numer, który ma już alias w banku B (np. po zmianie banku).
+   - **Obsługa:** KLIK zwraca `409_ALIAS_ALREADY_EXISTS`. Klient musi najpierw w banku B wyrejestrować numer (DELETE alias), dopiero potem może go zarejestrować u nas.
+
+4. **Konflikt strefy (cross-zone)**
+   - **Sytuacja:** Numer telefonu nie pasuje do strefy banku rejestrującego (np. polski bank rejestruje US numer).
+   - **Obsługa:** KLIK zwraca `422_ZONE_MISMATCH`. Bank-nadawca odrzuca z komunikatem o niezgodności strefy.
 
 ### 4.7 Karty płatnicze
 
@@ -147,6 +253,49 @@ Dla VIRTUAL provider auto-aktywuje kartę po 1h. Dla PHYSICAL klient (bank) musi
 | `/api/cards/{id}` | DELETE | Trwałe usunięcie (BLOCKED u providera + delete lokalnie) |
 | `/api/cards/{id}/dev/force-activate` | POST | DEV: REQUESTED → ACTIVE |
 | `/capture` (alias dla `/api/webhooks/cards/capture`) | POST | Webhook od providera — settlement |
+
+### 4.8 System AML (Anti-Money Laundering)
+
+System przeciwdziałania praniu pieniędzy emuluje typowy moduł nadzoru transakcyjnego stosowany w polskich bankach detalicznych. Każda transakcja wychodząca przed wysłaniem do systemu rozliczeniowego (ELIXIR / Express ELIXIR / SORBNET3 / SWIFT / KLIK P2P) przechodzi przez **silnik reguł**. Jeśli którakolwiek reguła zostanie aktywowana, transakcja zostaje **wstrzymana w stanie `HELD_FOR_AML`**, środki są zablokowane, a klient otrzymuje powiadomienie wraz z możliwością złożenia wyjaśnień. Bank (rola `ADMIN`) podejmuje finalną decyzję — zatwierdzenie powoduje wznowienie i finalizację przelewu, odrzucenie zwraca środki na konto klienta.
+
+#### 4.8.1 Architektura
+
+Silnik AML jest komponentem wewnętrznym banku (bez zewnętrznego serwisu) — wszystkie reguły, decyzje i stan trzymane w bazie banku.
+
+System bankowy (request klienta) → blokada środków → AmlEvaluator → reguła wstrzymuje → `aml_hold` + status `HELD_FOR_AML` → klient składa wyjaśnienia → admin decyduje → finalize lub cancel
+
+Sześć reguł aplikowanych w trybie "first match wins":
+
+- **HighAmount** — internal/external ≥ 15 000 PLN (próg raportowania GIIF + dyrektywa UE)
+- **SwiftHighAmount** — SWIFT EUR ≥ 5 000 / USD ≥ 6 000 / GBP ≥ 4 000
+- **HighRiskCountry** — SWIFT z krajem z listy FATF/sankcji UE (RU, BY, KP, IR, SY, AF, MM, VE, CU, SD, SS, YE)
+- **SuspiciousTitle** — tytuł zawiera frazę-czerwoną-flagę (`crypto`, `bitcoin`, `darknet`, `cash only`, `kasyno`, `donacja`, itp.)
+- **Structuring** — > 5 przelewów do tego samego odbiorcy w ostatniej godzinie (próba obejścia progów)
+- **NewBeneficiaryHighAmount** — pierwsza transakcja do nowego odbiorcy z kwotą ≥ 5 000 PLN
+
+Stany wstrzymania: `AWAITING_EXPLANATION` → `AWAITING_DECISION` → `APPROVED` / `REJECTED`.
+
+#### 4.8.2 Sytuacje brzegowe
+
+1. **Klient nie składa wyjaśnień**
+   - **Sytuacja:** Wstrzymana transakcja czeka w stanie `AWAITING_EXPLANATION`, klient nie wpisuje uzasadnienia.
+   - **Obsługa:** W realnym banku po określonym czasie (np. 7 dni) compliance automatycznie odrzuca transakcję i wystawia raport SAR (Suspicious Activity Report) do GIIF. W MVP transakcja pozostaje w stanie pending — bank może ją w każdej chwili odrzucić ręcznie.
+
+2. **Klient próbuje obejść regułę przez podział kwoty (structuring)**
+   - **Sytuacja:** Klient zamiast jednego przelewu 20 000 PLN wysyła 6× po 3 333 PLN do tego samego odbiorcy w krótkim odstępie czasu.
+   - **Obsługa:** Reguła `StructuringRule` zlicza transakcje do tego samego `receiverIdentifier` w ostatniej godzinie. Po przekroczeniu 5 transakcji szósta zostaje wstrzymana niezależnie od kwoty, a klient musi wyjaśnić wzorzec.
+
+3. **Bank-odbiorca w sankcjonowanym kraju**
+   - **Sytuacja:** Klient zleca SWIFT do BIC w Rosji lub Iranie.
+   - **Obsługa:** Reguła `HighRiskCountryRule` wstrzymuje transakcję niezależnie od kwoty. Admin AML weryfikuje cel (pomoc humanitarna? rodzinny?) — typowo odrzuca z notatką wymaganą do dossier klienta.
+
+4. **Approve po wstrzymaniu SWIFT — middleware odrzuca**
+   - **Sytuacja:** Admin zatwierdza wstrzymany SWIFT, ale gdy bank próbuje teraz wysłać do middleware, ten zwraca `404 Route not found`.
+   - **Obsługa:** Procedura `finalizeAfterAml` w `SwiftService` traktuje błąd middleware jak zwykły `RETURN` — odblokowuje środki klientowi, ustawia status `RETURNED`. Hold pozostaje `APPROVED` (decyzja AML była pozytywna, fail jest techniczny).
+
+5. **KLIK P2P pre-staging przy wstrzymaniu**
+   - **Sytuacja:** Klient wysyła KLIK na telefon, transakcja zostaje wstrzymana przez AML jeszcze przed delegacją do internal/external transfer.
+   - **Obsługa:** `KlikP2PService` pre-stage'uje odpowiednią encję (`Transaction` dla on-us, `ExternalTransfer` dla off-us) ze statusem `HELD_FOR_AML` i blokuje środki. Po decyzji admina `AmlDecisionExecutor` deleguje do `TransactionService.finalizeAfterAml` lub `ExternalTransferService.finalizeAfterAml`, dzięki czemu nie ma duplikacji logiki finalizacji.
 
 ## 5. Diagramy
 
@@ -931,7 +1080,108 @@ Doładowanie karty prepaid pokazuje **koordynację dwóch systemów** (bank + pr
 > **TODO:** wrzucenie pełnej architektury
 
 ## 7. Struktura projektu
-> **TODO:** wrzucenie struktury projektu
+
+Projekt podzielony jest na trzy główne moduły: **backend** (Spring Boot 3 / Java 21), **frontend** (React 18 / Vite / TypeScript) oraz **docs** (diagramy w formacie Mermaid i ich renderowane obrazy).
+
+```
+polish-bank-a/
+├── backend/                              # API Spring Boot
+│   ├── src/main/java/com/polishbank/bank_a/
+│   │   ├── BankAApplication.java         # Punkt wejścia aplikacji
+│   │   ├── config/                       # SecurityConfig, JwtConfig, CORS, cache
+│   │   ├── security/                     # JwtAuthFilter, JwtUtil, UserDetailsService
+│   │   ├── domain/                       # Logika biznesowa pogrupowana per moduł
+│   │   │   ├── account/                  # Konta klienta i juniora
+│   │   │   ├── aml/                      # Silnik AML, reguły, decyzje
+│   │   │   │   ├── rules/                # 6 reguł wstrzymujących transakcję
+│   │   │   │   ├── AmlEvaluator.java     # Orkiestrator reguł
+│   │   │   │   ├── AmlService.java       # Klient + admin endpointy
+│   │   │   │   └── AmlDecisionExecutor.java   # Delegacja approve/reject do 4 serwisów
+│   │   │   ├── auth/                     # Login, rejestracja, PIN, lockout
+│   │   │   ├── card/                     # Cykl życia karty, limity, blokady
+│   │   │   ├── junior/                   # Konta dziecięce, zatwierdzanie rodzica
+│   │   │   ├── klik/                     # KLIK C2B (kod), P2P (aliasy + przelew)
+│   │   │   ├── swift/                    # Przelewy międzynarodowe SWIFT
+│   │   │   ├── transaction/              # Przelewy wewnętrzne
+│   │   │   ├── transfer/                 # Przelewy zewnętrzne (ELIXIR/EXPRESS/SORBNET3)
+│   │   │   └── user/                     # Encja User, repozytorium
+│   │   ├── entity/                       # JPA entities (Account, Transaction, KlikAlias...)
+│   │   ├── integration/                  # Klienci zewnętrznych serwisów
+│   │   │   ├── cards/                    # Provider kart (HMAC, gRPC, REST)
+│   │   │   ├── klik/                     # KLIK C2B + P2P REST
+│   │   │   ├── payments/                 # ELIXIR, Express ELIXIR, SORBNET3 (pacs.008)
+│   │   │   └── swift/                    # SWIFT middleware (OAuth2, pacs.008)
+│   │   ├── repository/                   # Spring Data JPA repozytoria
+│   │   ├── exception/                    # GlobalExceptionHandler, custom exceptions
+│   │   └── seeder/                       # DataSeeder — dane testowe przy starcie
+│   ├── src/main/resources/
+│   │   ├── application.properties        # Konfiguracja Spring + integracji
+│   │   └── db/migration/                 # Migracje Flyway (V1-V9)
+│   ├── build.gradle.kts
+│   └── Dockerfile
+│
+├── frontend/                             # Aplikacja React
+│   ├── src/
+│   │   ├── main.tsx                      # Bootstrap Reacta
+│   │   ├── App.tsx                       # Routing + ProtectedRoute
+│   │   ├── constants/routes.tsx          # Definicje ścieżek
+│   │   ├── contexts/AuthContext.tsx      # Globalny stan użytkownika + token
+│   │   ├── hooks/                        # Custom hooks (np. usePendingKlikAuthorization)
+│   │   ├── components/                   # Komponenty wielokrotnego użytku
+│   │   │   ├── layout/                   # ProtectedRoute, layouty
+│   │   │   ├── KlikAuthorizationWatcher.tsx
+│   │   │   └── KlikAuthorizationModal.tsx
+│   │   ├── pages/                        # Strony — jedna na route
+│   │   │   ├── Home.tsx                  # Landing
+│   │   │   ├── Dashboard.tsx             # Główny widok po zalogowaniu
+│   │   │   ├── Settings.tsx              # Ustawienia konta (Numery KLIK, bezpieczeństwo)
+│   │   │   ├── TransactionHistory.tsx    # Historia transakcji
+│   │   │   ├── AmlHolds.tsx              # Wstrzymane transakcje (klient)
+│   │   │   ├── AmlAdmin.tsx              # Panel decyzji AML (admin)
+│   │   │   ├── SwiftTransfer.tsx         # Formularz przelewu zagranicznego
+│   │   │   ├── KlikP2PTransfer.tsx       # Przelew na telefon KLIK
+│   │   │   ├── KlikCodePage.tsx          # Generowanie kodu KLIK
+│   │   │   ├── KlikAliasesSection.tsx    # Sekcja zarządzania aliasami P2P (embed w Settings)
+│   │   │   ├── auth/                     # Login, Register, SetupPin, InternalTransfer, ExternalTransfer
+│   │   │   ├── cards/                    # Lista kart, zamawianie, szczegóły
+│   │   │   └── junior/                   # AddJunior, ManageJunior, PendingApprovals
+│   │   └── services/                     # Wrappery axios per moduł API
+│   │       ├── api.ts                    # Bazowa instancja axios + interceptors
+│   │       ├── authService.ts
+│   │       ├── amlService.ts
+│   │       ├── cardService.ts
+│   │       ├── juniorService.ts
+│   │       ├── klikAliasService.ts
+│   │       ├── klikAuthorizationService.ts
+│   │       ├── klikCodeService.ts
+│   │       ├── klikP2PService.ts
+│   │       └── swiftService.ts
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tailwind.config.js
+│   └── Dockerfile
+│
+├── docs/                                 # Diagramy (Mermaid + render PNG)
+│   ├── ERD_kod.mmd                       # ERD bazy danych
+│   ├── ERD_zdj.png
+│   ├── UseCase_kod.mmd                   # Diagram przypadków użycia
+│   ├── UseCase_zdj.png
+│   ├── DiagramKlasModelDomeny_kod.mmd    # Diagram klas — model domeny
+│   ├── DiagramKlasArchitekturaWarstwowa_kod.mmd   # Diagram klas — warstwy
+│   └── DiagramSekwencji*.mmd             # Diagramy sekwencji (Junior, KLIK, karty)
+│
+├── docker-compose.yml                    # Orkiestracja kontenerów (db / backend / frontend)
+├── .env.example                          # Przykładowy plik środowiskowy
+└── README.md
+```
+
+### Konwencje organizacji kodu
+
+**Backend** trzyma się układu **package-by-feature**: każdy moduł biznesowy (`aml`, `klik`, `swift`, `transfer` itd.) zawiera własne `Service`, `Controller`, `dto`, a wspólne encje JPA leżą w `entity/` żeby uniknąć cyklicznych zależności między pakietami. Klienci zewnętrznych API (mocki ELIXIR, KLIK, SWIFT, provider kart) są w `integration/` — separacja od logiki domenowej pozwala podmieniać implementacje bez ruszania serwisów.
+
+**Frontend** organizuje pliki według **typu artefaktu** (`pages/`, `services/`, `components/`, `contexts/`, `hooks/`) — strona to jeden plik `.tsx` reprezentujący jedną ścieżkę URL, a komunikacja z API jest enkapsulowana w `services/`, dzięki czemu strona nie zna szczegółów `axios`. Routing centralnie w `App.tsx` z użyciem `ROUTES` z `constants/routes.tsx` — brak magic stringów w nawigacji.
+
+**Migracje Flyway** (`backend/src/main/resources/db/migration/V*.sql`) wersjonują schemat bazy w trybie append-only — każda zmiana to nowy plik `V{n+1}__opis.sql`. Edytowanie już zaaplikowanej migracji powoduje checksum mismatch przy starcie kolejnej instancji.
 
 ## 8. Uruchomienie
 Projekt został w pełni skonteneryzowany, co gwarantuje spójność środowiska uruchomieniowego. Do uruchomienia całej infrastruktury (Baza danych, Backend, Frontend) wymagany jest jedynie Docker oraz Docker Compose.
@@ -980,12 +1230,8 @@ Projekt został w pełni skonteneryzowany, co gwarantuje spójność środowiska
 ## 9. Zespół
 Osoby pracujące w zespole pracują w modelu fullstack (tworzą elementy widoków użytkownika, elementy związane z logiką bazodanową lub API)
 
-Zadania wykonywane do tej pory
-
-| Osoba            | Zadania                                                                                        |
-|------------------|------------------------------------------------------------------------------------------------|
-| Julia Chmura     | Stworzenie bazy danych, zaprojektowanie diagramów UML, utworzenie encji w backendzie           |
-| Dominik Dziadosz | Tworzenie ogólnego zarysu widoków, tworzenie widoku strony głównej, logowania oraz rejestracji |
+Dominik Dziadosz
+Julia Chmura
 
 
 
