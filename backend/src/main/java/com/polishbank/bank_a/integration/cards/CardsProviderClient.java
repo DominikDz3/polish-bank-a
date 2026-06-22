@@ -41,11 +41,11 @@ public class CardsProviderClient {
     }
 
     public void activateCard(String cardToken, ActivateCardRequest request) {
-        plainPost("/api/v1/cards/" + cardToken + "/activate", request, Void.class);
-    }
+    signedPost("/api/v1/cards/" + cardToken + "/activate", request, Void.class);
+}
 
     public TopupCardResponse topupCard(String cardToken, TopupCardRequest request) {
-        return plainPost("/api/v1/cards/" + cardToken + "/topup", request, TopupCardResponse.class);
+        return signedPost("/api/v1/cards/" + cardToken + "/topup", request, TopupCardResponse.class);
     }
 
     public CardStatusResponse getStatus(String cardToken) {
@@ -121,20 +121,6 @@ public class CardsProviderClient {
         }
     }
 
-    private <R> R plainPost(String path, Object body, Class<R> responseType) {
-        try {
-            return restClient.post()
-                    .uri(path)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(responseType);
-        } catch (HttpStatusCodeException e) {
-            throw mapHttpError(e);
-        } catch (RestClientException e) {
-            throw new CardsProviderException("CONNECTION_ERROR", "Brak połączenia z providerem kart", e);
-        }
-    }
 
     private String serialize(Object body) {
         try {

@@ -1,6 +1,7 @@
 package com.polishbank.bank_a.config;
 
 import com.polishbank.bank_a.security.JwtAuthFilter;
+import com.polishbank.bank_a.security.RestAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,23 +32,25 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
+    private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
-                        .requestMatchers("/api/auth/pin").authenticated()                        
-                        .requestMatchers("/api/webhooks/**").permitAll()
-                        .requestMatchers("/api/aml/admin/**").hasAuthority("ROLE_ADMIN")
-                        .anyRequest().authenticated()
-                )
-                .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(e -> e.authenticationEntryPoint(restAuthenticationEntryPoint))
+            .authorizeHttpRequests(auth -> auth
+                    .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                    .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                    .requestMatchers("/api/auth/pin").authenticated()                        
+                .requestMatchers("/api/webhooks/**").permitAll()
+                .requestMatchers("/api/aml/admin/**").hasAuthority("ROLE_ADMIN")
+                .anyRequest().authenticated()
+            )
+            .authenticationProvider(authenticationProvider())
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
