@@ -191,9 +191,16 @@ public class ExternalTransferService {
     public List<ExternalTransferResponse> getHistory(UUID accountId, String userEmail) {
         User user = userRepository.findByEmail(userEmail).orElseThrow();
         Account account = accountRepository.findById(accountId).orElseThrow();
-        if (!account.getUser().getId().equals(user.getId())) {
+
+        boolean isOwner = account.getUser().getId().equals(user.getId());
+        boolean isParentOfJunior = "JUNIOR".equals(account.getType())
+                && account.getParentAccount() != null
+                && account.getParentAccount().getUser().getId().equals(user.getId());
+
+        if (!isOwner && !isParentOfJunior) {
             throw new SecurityException("Brak dostępu do tego konta.");
         }
+
         return transferRepository.findBySenderAccount_IdOrderByCreatedAtDesc(accountId)
                 .stream()
                 .map(this::toResponse)

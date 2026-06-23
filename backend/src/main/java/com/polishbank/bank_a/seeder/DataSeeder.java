@@ -89,7 +89,7 @@ public class DataSeeder implements CommandLineRunner {
                 
         // 2. KONTA BANKOWE (Identyfikator banku: 88880000)
         Account accEwa = accountRepository.save(Account.builder().user(parentEwa)
-                .accountNumber("PL45888800001234567890123456").balance(new BigDecimal("450000.00"))
+                .accountNumber("PL45888800001234567890123456").balance(new BigDecimal("4500000.00"))
                 .blockedFunds(new BigDecimal("150.00")).currency("PLN").type("STANDARD").build());
         Account accJanek = accountRepository.save(Account.builder().user(juniorJanek)
                 .accountNumber("PL92888800009876543210987654").balance(new BigDecimal("120.00"))
