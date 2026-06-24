@@ -6,12 +6,15 @@ import com.polishbank.bank_a.domain.user.User;
 import com.polishbank.bank_a.domain.user.UserRepository;
 import com.polishbank.bank_a.entity.Account;
 import com.polishbank.bank_a.entity.Card;
+import com.polishbank.bank_a.integration.cards.CardsProviderClient;
+import com.polishbank.bank_a.integration.cards.dto.CardStatusResponse;
 import com.polishbank.bank_a.repository.AccountRepository;
 import com.polishbank.bank_a.repository.CardRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,17 +26,20 @@ public class CardService {
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
     private final CardLimitService cardLimitService;
+    private final CardsProviderClient cardsProviderClient;
 
+    @Transactional
     public List<CardResponse> listMyCards(String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new IllegalArgumentException("Użytkownik nie znaleziony."));
 
         return cardRepository.findAll().stream()
                 .filter(c -> c.getAccount().getUser().getId().equals(user.getId()))
-                .map(this::toResponse)
+                .map(c -> toResponse(c, syncAndFetch(c)))
                 .toList();
     }
 
+    @Transactional
     public List<CardResponse> listForJuniorAccount(UUID juniorAccountId, String parentEmail) {
         User parent = userRepository.findByEmail(parentEmail)
                 .orElseThrow(() -> new IllegalArgumentException("Użytkownik nie znaleziony."));
@@ -51,7 +57,7 @@ public class CardService {
 
         return cardRepository.findAll().stream()
                 .filter(c -> c.getAccount().getId().equals(juniorAccountId))
-                .map(this::toResponse)
+                .map(c -> toResponse(c, syncAndFetch(c)))
                 .toList();
     }
 
@@ -84,12 +90,44 @@ public class CardService {
         cardRepository.save(card);
     }
 
-        private CardResponse toResponse(Card card) {
+    /**
+     * Pobiera aktualny stan karty od providera (best-effort): synchronizuje status (blokada/odblokowanie
+     * zrobione po stronie systemu kart) i zwraca odpowiedź, z której bierzemy saldo PREPAID.
+     */
+    private CardStatusResponse syncAndFetch(Card card) {
+        if (card.getProviderToken() == null) {
+            return null;
+        }
+        try {
+            CardStatusResponse remote = cardsProviderClient.getStatus(card.getProviderToken());
+            if (remote != null && remote.status() != null) {
+                String status = remote.status();
+                boolean changed = !status.equals(card.getProviderStatus())
+                        || card.isBlocked() != "BLOCKED".equals(status);
+                if (changed) {
+                    card.setProviderStatus(status);
+                    card.setBlocked("BLOCKED".equals(status));
+                    cardRepository.save(card);
+                }
+            }
+            return remote;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private CardResponse toResponse(Card card, CardStatusResponse remote) {
         String masked = card.getMaskedPan() != null
                 ? card.getMaskedPan()
                 : (card.getCardNumber() == null
                     ? null
                     : "**** **** **** " + card.getCardNumber().substring(Math.max(0, card.getCardNumber().length() - 4)));
+
+        BigDecimal prepaidBalance = null;
+        if ("PREPAID".equals(card.getType()) && remote != null && remote.balance() != null) {
+            prepaidBalance = BigDecimal.valueOf(remote.balance());
+        }
+
         return new CardResponse(
                 card.getId(),
                 card.getAccount().getId(),
@@ -104,7 +142,8 @@ public class CardService {
                 card.isBlocked(),
                 card.getProviderToken(),
                 card.getProviderStatus(),
-                card.getMaskedPan()
+                card.getMaskedPan(),
+                prepaidBalance
         );
     }
 }

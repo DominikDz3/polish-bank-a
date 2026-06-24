@@ -269,6 +269,12 @@ const CardsPage: React.FC = () => {
                     <p className="text-zinc-500 mb-1">Wydano dziś</p>
                     <p className="text-zinc-200 font-medium">{fmt(card.spentToday, card.currency)}</p>
                   </div>
+                  {card.type === 'PREPAID' && card.prepaidBalance != null && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 text-sm mb-4">
+                    <span className="text-zinc-400">Dostępne na karcie: </span>
+                    <span className="text-emerald-400 font-semibold">{fmt(card.prepaidBalance, card.currency)}</span>
+                  </div>
+                )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {status !== 'ACTIVE' && status !== 'BLOCKED' && (

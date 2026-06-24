@@ -19,6 +19,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
        SELECT COALESCE(SUM(t.amount), 0)
        FROM Transaction t
        WHERE t.card.id = :cardId
+         AND t.type = 'CARD_PAYMENT'
          AND t.status = 'COMPLETED'
          AND t.executionDate >= :startOfDay
          AND t.executionDate < :startOfNextDay
@@ -27,6 +28,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
         @Param("cardId") UUID cardId,
         @Param("startOfDay") LocalDateTime startOfDay,
         @Param("startOfNextDay") LocalDateTime startOfNextDay);
+
+    List<Transaction> findByExternalPaymentIdAndType(String externalPaymentId, String type);
 
     long countBySenderAccount_IdAndReceiverAccountNumberAndCreatedAtAfter(
         java.util.UUID senderAccountId,

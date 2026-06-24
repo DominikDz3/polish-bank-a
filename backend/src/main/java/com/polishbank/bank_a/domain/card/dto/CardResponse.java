@@ -18,5 +18,6 @@ public record CardResponse(
     boolean blocked,
     String providerToken,
     String providerStatus,
-    String maskedPan
+    String maskedPan,
+    BigDecimal prepaidBalance
 ) {}

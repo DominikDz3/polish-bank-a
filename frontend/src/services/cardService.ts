@@ -15,6 +15,7 @@ export interface CardSummary {
   providerToken: string | null;
   providerStatus: string | null;
   maskedPan: string | null;
+  prepaidBalance: number | null;
 }
 
 export interface CardPaymentPayload {
